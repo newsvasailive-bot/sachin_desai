@@ -2,23 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voter List Auto Extractor (Exact CSV Format)</title>
+<title>Text to JSON & CSV for Firebase</title>
 <style>
 body { font-family: Arial; background:#f2f2f2; padding:20px; }
-textarea { width:100%; height:260px; padding:10px; font-size:15px; }
-button { padding:10px 20px; margin-top:12px; cursor:pointer; font-size:15px; }
+textarea { width:100%; height:250px; padding:10px; font-size:15px; }
+button { padding:10px 20px; margin:10px 5px 10px 0; cursor:pointer; font-size:15px; }
 table { width:100%; border-collapse:collapse; margin-top:20px; background:#fff; }
 th, td { border:1px solid #ccc; padding:8px; font-size:14px; text-align:left; }
 th { background:#222; color:#fff; }
 </style>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
-<h2>Voter List Auto Extractor – Perfect CSV Format</h2>
+<h2>Voter Text → JSON & CSV → Firebase</h2>
 
-<textarea id="input" placeholder="Yahan PDF se nikala hua text paste karein..."></textarea><br>
+<textarea id="input" placeholder="Yahan voter text paste karein..."></textarea><br>
 <button onclick="extract()">Extract</button>
 <button onclick="downloadCSV()">Download CSV</button>
+<button onclick="downloadJSON()">Download JSON</button>
+<button onclick="sendFirebase()">Send to Firebase</button>
 
 <table id="output">
 <thead>
@@ -38,6 +43,20 @@ th { background:#222; color:#fff; }
 </table>
 
 <script>
+// --- Firebase config ---
+const firebaseConfig = {
+  apiKey: "AIzaSyCdjqVFKOQ1dtaXCGFUUtsJWbFdGNTo-xw",
+  authDomain: "voter-25c94.firebaseapp.com",
+  databaseURL: "https://voter-25c94-default-rtdb.firebaseio.com",
+  projectId: "voter-25c94",
+  storageBucket: "voter-25c94.appspot.com",
+  messagingSenderId: "297773534400",
+  appId: "1:297773534400:web:3722c487b8c83e9b787125"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+// --- Extraction ---
 function extract() {
     let text = document.getElementById("input").value;
     let lines = text.split("\n").map(x => x.trim()).filter(x => x);
@@ -60,72 +79,41 @@ function extract() {
     }
 
     lines.forEach(line => {
-        // SerialNo
-        if (/^\d{1,4}$/.test(line)) {
-            save();
-            voter.SerialNo = line;
-            return;
-        }
-
-        // EPIC_NO + PartNo (ignore spaces)
+        if (/^\d{1,4}$/.test(line)) { save(); voter.SerialNo = line; return; }
         if (/^[A-Z]{3}\d{5,}/.test(line.replace(/\s/g, ""))) {
-            let cleaned = line.replace(/\s/g, "");
+            let cleaned = line.replace(/\s/g,"");
             voter.EPIC_NO = cleaned.match(/^[A-Z]{3}\d{5,}/)[0];
             let p = cleaned.match(/\d+\/\d+\/\d+/);
             if (p) voter.PartNo = p[0];
             return;
         }
-
-        // Voter Name
         if (line.includes("मतदाराचे पूर्ण") || line.includes("मतदाराचे नाव") || line.includes("नांव")) {
-            let parts = line.split(":");
-            voter.VoterName = parts.length > 1 ? parts.pop().trim() : line.replace(/.*नांव/, "").trim();
+            voter.VoterName = line.split(":").pop().trim();
             return;
         }
-
-        // Relation – Husband
         if (line.includes("पतीचे") || line.includes("पति")) {
             voter.RelationType = "Husband";
-            let parts = line.split(":");
-            voter.RelationName = parts.length > 1 ? parts.pop().trim() : line.replace(/पतीचे|पति/, "").trim();
+            voter.RelationName = line.split(":").pop().trim();
             return;
         }
-
-        // Relation – Father
         if (line.includes("वडिलांचे") || line.includes("वडील") || line.includes("Father")) {
             voter.RelationType = "Father";
-            let parts = line.split(":");
-            voter.RelationName = parts.length > 1 ? parts.pop().trim() : line.replace(/वडिलांचे|वडील|Father/, "").trim();
+            voter.RelationName = line.split(":").pop().trim();
             return;
         }
-
-        // House No
-        if (line.includes("घर क्रमांक")) {
-            voter.HouseNo = line.split(":").pop().trim() || "NA";
-            return;
-        }
-
-        // Age
-        if (line.includes("वय")) {
-            voter.Age = line.split(":").pop().trim();
-            return;
-        }
-
-        // Gender
+        if (line.includes("घर क्रमांक")) { voter.HouseNo = line.split(":").pop().trim() || "NA"; return; }
+        if (line.includes("वय")) { voter.Age = line.split(":").pop().trim(); return; }
         if (line.includes("लिंग") || line.includes("Gender")) {
-            if (line.includes("स्त्री") || line.includes("Female")) voter.Gender = "Female";
-            else voter.Gender = "Male";
-            save(); // Important: save voter when gender is found
+            voter.Gender = (line.includes("स्त्री") || line.includes("Female")) ? "Female" : "Male";
+            save(); // Save on gender
             return;
         }
     });
+    save();
 
-    save(); // last voter
-
-    // Show in table
+    // Show table
     results.forEach(r => {
-        tbody.innerHTML += `
-        <tr>
+        tbody.innerHTML += `<tr>
             <td>${r.SerialNo}</td>
             <td>${r.EPIC_NO}</td>
             <td>${r.PartNo}</td>
@@ -141,19 +129,38 @@ function extract() {
     window.extracted = results;
 }
 
+// --- Download CSV ---
 function downloadCSV() {
-    if (!window.extracted) return alert("Extract pehle karein");
-
+    if (!window.extracted) return alert("Extract pehle karein!");
     let csv = "SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender\n";
     window.extracted.forEach(r => {
         csv += `${r.SerialNo},${r.EPIC_NO},${r.PartNo},"${r.VoterName}","${r.RelationName}","${r.RelationType}","${r.HouseNo}","${r.Age}","${r.Gender}"\n`;
     });
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "voter_list.csv";
     a.click();
+}
+
+// --- Download JSON ---
+function downloadJSON() {
+    if (!window.extracted) return alert("Extract pehle karein!");
+    const blob = new Blob([JSON.stringify(window.extracted,null,2)], { type:"application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "voter_list.json";
+    a.click();
+}
+
+// --- Send to Firebase ---
+function sendFirebase() {
+    if (!window.extracted) return alert("Extract pehle karein!");
+    const dbRef = firebase.database().ref('voters');
+    window.extracted.forEach(voter => {
+        dbRef.push(voter);
+    });
+    alert("Data Firebase me bhej diya gaya!");
 }
 </script>
 
