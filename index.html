@@ -8,44 +8,20 @@
 body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
 h2 { text-align: center; color: #333; }
 p { text-align: center; }
-textarea { 
-    width: 100%; 
-    height: 350px; 
-    margin-bottom: 15px; 
-    padding: 15px; 
-    font-size: 14px; 
-    border: 2px solid #ccc; 
-    box-sizing: border-box; 
-    resize: vertical;
-} 
-.button-container {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 20px;
-}
+textarea { width: 100%; height: 350px; margin-bottom: 15px; padding: 15px; font-size: 14px;
+    border: 2px solid #ccc; box-sizing: border-box; resize: vertical; }
+.button-container { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
 .button-container button {
-    padding: 12px 15px;
-    font-size: 16px;
-    cursor: pointer;
-    border: none;
-    border-radius: 5px;
-    transition: background-color 0.3s;
-    width: 100%;
+    padding: 12px 15px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px;
+    transition: background-color 0.3s; width: 100%;
 }
 #generateButton { background-color: #007bff; color: white; }
 #generateButton:hover { background-color: #0056b3; }
 #copyButton { background-color: #28a745; color: white; }
 #copyButton:hover { background-color: #218838; }
-#outputCSV {
-    width: 100%; 
-    height: 300px; 
-    padding: 10px; 
-    font-family: Consolas, monospace;
-    font-size: 13px;
-    border: 1px solid #ddd;
-    box-sizing: border-box;
-    white-space: pre-wrap;
+#outputCSV { width: 100%; height: 300px; padding: 10px;
+    font-family: Consolas, monospace; font-size: 13px; border: 1px solid #ddd;
+    box-sizing: border-box; white-space: pre-wrap;
 }
 </style>
 </head>
@@ -63,7 +39,116 @@ textarea {
 <h3>Output CSV:</h3>
 <textarea id="outputCSV" readonly placeholder="जनरेट किया गया CSV यहाँ दिखाई देगा।"></textarea>
 
-<script>function processCSV(){alert('Powerful script integrated successfully!');}</script>
+<script>
+// ===================== FIXED HEADER =====================
+const FIXED_HEADER =
+"SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender";
+
+// ===================== MAIN FUNCTION =====================
+function generateCSV() {
+    const raw = document.getElementById("inputText").value.trim();
+    const out = document.getElementById("outputCSV");
+    const copyBtn = document.getElementById("copyButton");
+
+    if (!raw) {
+        out.value = FIXED_HEADER + "\n❌ कृपया इनपुट डालें!";
+        return;
+    }
+
+    // Clean text
+    let text = raw
+        .replace(/\|/g, " ")
+        .replace(/\n/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    // Detect EPIC + PART
+    const epicRegex = /(RBG\w+)\s+(\d{1,3}\/\d{1,3}\/\d+)/gi;
+    const matches = [...text.matchAll(epicRegex)];
+
+    if (matches.length === 0) {
+        out.value = "❌ EPIC नंबर नहीं मिला!";
+        return;
+    }
+
+    let csv = FIXED_HEADER + "\n";
+    let serial = 1;
+
+    for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index;
+        const end = (i + 1 < matches.length) ? matches[i + 1].index : text.length;
+        const block = text.substring(start, end).trim();
+
+        let epic = matches[i][1];
+        let part = matches[i][2];
+
+        // --- Extract Voter Name ---
+        let voterName = "NA";
+        let nm = block.match(/नांव\s*([^:]+?)\s*(पतीचे|वडिलांचे|आईचे|घर क्रमांक|Photo)/);
+        if (nm) voterName = nm[1].trim();
+
+        // --- Extract Relation ---
+        let relationName = "NA", relationType = "NA";
+
+        if (block.includes("पतीचे नाव")) {
+            relationType = "Husband";
+            relationName = (block.match(/पतीचे नाव\s*[:]\s*([^:]+?)\s*(घर|वय|लिंग|$)/) || ["","NA"])[1].trim();
+        }
+        else if (block.includes("वडिलांचे नाव")) {
+            relationType = "Father";
+            relationName = (block.match(/वडिलांचे नाव\s*[:]\s*([^:]+?)\s*(घर|वय|लिंग|$)/) || ["","NA"])[1].trim();
+        }
+        else if (block.includes("आईचे नाव")) {
+            relationType = "Mother";
+            relationName = (block.match(/आईचे नाव\s*[:]\s*([^:]+?)\s*(घर|वय|लिंग|$)/) || ["","NA"])[1].trim();
+        }
+
+        // --- Extract House No ---
+        let house = "NA";
+        let hs = block.match(/घर क्रमांक\s*[:]\s*([^:]+?)\s*(वय|लिंग|$)/);
+        if (hs) house = hs[1].trim();
+
+        // --- Extract Age ---
+        let age = "NA";
+        let ag = block.match(/वय\s*[:]\s*(\d+)/);
+        if (ag) age = ag[1];
+
+        // --- Extract Gender ---
+        let gender = "NA";
+        if (/स्त्री/.test(block)) gender = "Female";
+        else if (/पु/.test(block)) gender = "Male";
+
+        // ----- Build CSV Row -----
+        let row = [
+            serial++,
+            epic,
+            part,
+            `"${voterName}"`,
+            `"${relationName}"`,
+            relationType,
+            house,
+            age,
+            gender
+        ].join(",");
+
+        csv += row + "\n";
+    }
+
+    out.value = csv;
+    copyBtn.disabled = false;
+}
+
+// ===================== COPY FUNCTION =====================
+function copyCSV() {
+    const out = document.getElementById("outputCSV");
+    out.select();
+    document.execCommand("copy");
+
+    let btn = document.getElementById("copyButton");
+    btn.textContent = "✔ कॉपी हो गया!";
+    setTimeout(() => btn.textContent = "📋 CSV कॉपी करें", 1500);
+}
+</script>
 
 </body>
 </html>
