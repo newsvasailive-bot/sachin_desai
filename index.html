@@ -10,7 +10,7 @@ h2 { text-align: center; color: #333; }
 p { text-align: center; }
 textarea { 
     width: 100%; 
-    height: 350px; /* ऊँचाई बढ़ाई गई */
+    height: 350px; 
     margin-bottom: 15px; 
     padding: 15px; 
     font-size: 14px; 
@@ -18,64 +18,85 @@ textarea {
     box-sizing: border-box; 
     resize: vertical;
 } 
-button { 
-    padding: 12px 25px; 
-    font-size: 18px; 
-    cursor: pointer; 
-    background-color: #28a745; /* हरा रंग */
-    color: white; 
-    border: none; 
-    border-radius: 5px; 
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
+.button-container {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.button-container button {
+    padding: 12px 15px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px;
     transition: background-color 0.3s;
+    width: 100%;
 }
-button:hover { background-color: #218838; }
-h3 { margin-top: 25px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
-pre { 
-    background: #fff; 
-    padding: 20px; 
-    border: 1px solid #ccc; 
-    overflow-x: auto; 
-    white-space: pre-wrap; 
-    margin-top: 15px; 
-    font-family: Consolas, monospace; 
-    font-size: 14px;
+#generateButton {
+    background-color: #007bff; /* नीला */
+    color: white;
 }
+#generateButton:hover { background-color: #0056b3; }
+
+#copyButton {
+    background-color: #28a745; /* हरा */
+    color: white;
+}
+#copyButton:hover { background-color: #218838; }
+
+#outputCSV {
+    width: 100%; 
+    height: 300px; /* आउटपुट बॉक्स */
+    padding: 10px; 
+    font-family: Consolas, monospace;
+    font-size: 13px;
+    border: 1px solid #ddd;
+    box-sizing: border-box;
+}
+
 </style>
 </head>
 <body>
 
 <h2>Voter List CSV Fixer 🛠️</h2>
-<p>Raw voter text यहाँ paste करें, फिर CSV generate करें:</p>
+<p>Raw voter text यहाँ paste करें:</p>
 <textarea id="inputText" placeholder="कच्चा टेक्स्ट यहाँ पेस्ट करें"></textarea>
-<br>
-<button onclick="generateCSV()">CSV Generate करें</button>
+
+<div class="button-container">
+    <button id="generateButton" onclick="generateCSV()">CSV Generate करें</button>
+    <button id="copyButton" onclick="copyCSV()" disabled>📋 CSV कॉपी करें</button>
+</div>
 
 <h3>Output CSV:</h3>
-<pre id="outputCSV">जनरेट किया गया CSV यहाँ दिखाई देगा।</pre>
+<textarea id="outputCSV" readonly placeholder="जनरेट किया गया CSV यहाँ दिखाई देगा।"></textarea>
 
 <script>
+// =======================================================================
+// CSV GENERATION LOGIC
+// =======================================================================
 function generateCSV() {
     const raw = document.getElementById('inputText').value.trim();
+    const outputElement = document.getElementById('outputCSV');
+    const copyButton = document.getElementById('copyButton');
     
+    copyButton.disabled = true; // पहले कॉपी बटन को अक्षम करें
+
     if (!raw) {
-        document.getElementById('outputCSV').textContent = "❌ त्रुटि: कृपया टेक्स्ट डालें।";
+        outputElement.value = "❌ त्रुटि: कृपया टेक्स्ट डालें।";
         return;
     }
 
-    // 1. डेटा को साफ़ करें और एक सिंगल स्ट्रिंग में समेटें: सभी लाइन ब्रेक, | को स्पेस से बदलें।
+    // 1. डेटा को साफ़ करें और एक सिंगल स्ट्रिंग में समेटें
     const cleanedRaw = raw.replace(/\|\s*/g, ' ').replace(/\n/g, ' ');
     
     // 2. EPIC/PartNo पैटर्न के आधार पर रिकॉर्ड को विभाजित करें।
-    // यह पैटर्न एक वोटर रिकॉर्ड की शुरुआत को दर्शाता है।
     const epicPartPattern = /(\w+\s+\d{1,3}\/\d{1,3}\/\d+)/;
     const records = cleanedRaw.split(epicPartPattern).filter(r => r.trim() !== '');
 
     // डिबगिंग चेक
     if (records.length < 2) {
-        document.getElementById('outputCSV').textContent = 
+        outputElement.value = 
             "❌ त्रुटि: EPIC/PartNo पैटर्न नहीं मिला। कृपया जांचें कि टेक्स्ट में 'ABC1234567 1/1/1' जैसा पैटर्न मौजूद है।";
         return;
     }
@@ -84,7 +105,7 @@ function generateCSV() {
     let output = header + '\n';
     let serial = 1;
 
-    // हर दो तत्वों पर लूप करें: पहला EPIC/PartNo, दूसरा बाकी डेटा।
+    // 3. डेटा को प्रोसेस करें
     for (let i = 0; i < records.length; i += 2) {
         const epicPartString = records[i].trim();
         const dataString = records[i + 1] ? records[i + 1].trim() : '';
@@ -93,7 +114,7 @@ function generateCSV() {
 
         let voter = {};
         
-        // 1. EPIC_NO and PartNo को निकालें
+        // 1. EPIC_NO and PartNo
         const epicMatch = epicPartString.match(epicPartPattern);
         if (epicMatch) {
             voter.EPIC_NO = epicMatch[1];
@@ -102,10 +123,9 @@ function generateCSV() {
             continue;
         }
 
-        // डेटा स्ट्रिंग को EPIC/PartNo के साथ मिलाएं ताकि सभी डेटा एक ही स्थान पर हो।
         const fullRecord = dataString + ' ' + epicPartString; 
         
-        // 2. Voter Name (नाम टूटे हुए 'मतदाराचे पूर्ण:' को संभालें)
+        // 2. Voter Name 
         const nameMatch = fullRecord.match(/मतदा\s*\d*राचे पूर्ण\s*:\s*(.*?)\s*नांव/i);
         voter.VoterName = nameMatch ? nameMatch[1].trim() : 'NA';
 
@@ -118,7 +138,6 @@ function generateCSV() {
         };
 
         for (const keyword in relationKeywords) {
-             // कीवर्ड के बाद कॉलन या पाइप (|) और फिर नाम निकालें
              const relationRegex = new RegExp(`${keyword}\\s*[:|]\\s*(.*?)(?:घर क्रमांक|वय|लिंग|मतदा|Photo|${voter.EPIC_NO}|$|\\w+\\s+\\d{1,3}\/\\d{1,3}\/\\d+)`, 'i');
              const relationMatch = fullRecord.match(relationRegex);
              
@@ -142,7 +161,6 @@ function generateCSV() {
         }
 
         // 5. House Number
-        // हम House Number को अगले प्रमुख कीवर्ड (Age/Gender/Photo) तक कैप्चर करते हैं।
         const houseMatch = fullRecord.match(/घर क्रमांक\s*[:|]\s*(.*?)(?:\s*वय\s*:|\s*लिंग\s*:| Photo|$)/i);
         voter.HouseNo = houseMatch ? houseMatch[1].trim() : 'NA';
         
@@ -161,7 +179,31 @@ function generateCSV() {
         output += row + '\n';
     }
 
-    document.getElementById('outputCSV').textContent = output;
+    outputElement.value = output;
+    copyButton.disabled = false; // सफल होने पर कॉपी बटन सक्षम करें
+}
+
+// =======================================================================
+// COPY FUNCTION
+// =======================================================================
+function copyCSV() {
+    const outputElement = document.getElementById('outputCSV');
+    
+    // CSV टेक्स्ट को चुनें
+    outputElement.select();
+    outputElement.setSelectionRange(0, 99999); // मोबाइल समर्थन के लिए
+    
+    // टेक्स्ट को क्लिपबोर्ड पर कॉपी करें
+    navigator.clipboard.writeText(outputElement.value).then(() => {
+        // कॉपी होने पर बटन का टेक्स्ट बदलें
+        const copyButton = document.getElementById('copyButton');
+        copyButton.textContent = '✅ कॉपी हो गया!';
+        setTimeout(() => {
+            copyButton.textContent = '📋 CSV कॉपी करें';
+        }, 1500);
+    }).catch(err => {
+        alert('कॉपी करने में विफल: ' + err);
+    });
 }
 </script>
 
