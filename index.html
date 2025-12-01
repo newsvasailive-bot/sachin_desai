@@ -5,21 +5,55 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Voter List CSV Viewer</title>
 <style>
-  body { font-family: Arial, sans-serif; padding: 20px; background: #f7f7f7; }
-  h2 { text-align: center; }
-  table { border-collapse: collapse; width: 100%; margin-top: 20px; background: #fff; }
-  th, td { border: 1px solid #999; padding: 8px; text-align: left; }
-  th { background: #eee; }
-  button { margin: 10px 5px 0 0; padding: 8px 12px; font-size: 14px; cursor: pointer; }
-  #csvOutput { width: 100%; height: 200px; margin-top: 20px; }
+  body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    background: #f7f7f7;
+  }
+  h2 {
+    text-align: center;
+  }
+  .container {
+    max-width: 1000px;
+    margin: auto;
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+  textarea {
+    width: 100%;
+    height: 400px;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 14px;
+    margin-top: 10px;
+    white-space: pre;
+  }
+  button {
+    margin-top: 10px;
+    margin-right: 10px;
+    padding: 10px 15px;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    background-color: #3498db;
+    color: white;
+  }
+  button:hover {
+    background-color: #2980b9;
+  }
 </style>
 </head>
 <body>
-
-<h2>Voter List CSV Viewer</h2>
-
-<textarea id="csvOutput" readonly>
-SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender
+<div class="container">
+  <h2>Voter List CSV Viewer</h2>
+  <label><strong>Header:</strong></label>
+  <textarea id="header" readonly>SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender</textarea>
+  
+  <label><strong>CSV Output:</strong></label>
+  <textarea id="csvOutput" readonly>
 1,RBG4942918,131/272/1,"अन्सारी सद्दाम हुसेन","अन्सारी अबूबकर","Father","NA","30","Male"
 2,MRL2020212,131/272/2,"आर्या जगजीवन परदेशी","आर्या परदेशी","Father","NA","53","Male"
 3,MRL2022762,131/272/3,"आर्या मालती देवी जगजीवन","आर्या जगजीवन","Husband","NA","47","Female"
@@ -28,30 +62,31 @@ SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender
 6,RBG5072202,131/272/6,"बरफ नरेश विष्णु","बरफ विष्णु","Father","NA","29","Male"
 7,RBG4585816,131/272/7,"बरफ अनंता बाळू","बरफ बाळू","Father","NA","28","Male"
 8,RBG4997110,131/272/8,"भोईर ज्योती लाडकू","भोईर लाडकू","Father","NA","33","Female"
-</textarea>
-
-<br>
-<button onclick="copyCSV()">Copy CSV</button>
-<button onclick="downloadCSV()">Download CSV</button>
+  </textarea>
+  
+  <div>
+    <button onclick="copyCSV()">Copy CSV</button>
+    <button onclick="downloadCSV()">Download CSV</button>
+  </div>
+</div>
 
 <script>
 function copyCSV() {
-  const textarea = document.getElementById('csvOutput');
-  textarea.select();
-  textarea.setSelectionRange(0, 99999);
-  document.execCommand('copy');
-  alert('CSV copied to clipboard!');
+  const csvText = document.getElementById('csvOutput');
+  csvText.select();
+  csvText.setSelectionRange(0, 99999);
+  document.execCommand("copy");
+  alert("CSV copied to clipboard!");
 }
 
 function downloadCSV() {
-  const csvData = document.getElementById('csvOutput').value;
-  const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+  const csvText = document.getElementById('csvOutput').value;
+  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = "voter_list.csv";
   link.click();
 }
 </script>
-
 </body>
 </html>
