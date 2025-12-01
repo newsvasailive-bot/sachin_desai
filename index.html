@@ -3,64 +3,103 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PDF to CSV Converter</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+<title>Text to CSV Converter</title>
+
 <style>
-body { font-family: Arial; margin:20px; }
-#result { white-space: pre-wrap; background:#f1f1f1; padding:15px; margin-top:10px; }
-button { padding:10px 15px; margin:10px 0; }
+body { font-family: Arial; padding:20px; background:#f3f3f3; }
+h2 { text-align:center; margin-bottom:20px; }
+
+.box {
+    width: 100%;
+    height: 160px;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background: white;
+    font-size: 15px;
+    resize: vertical;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 16px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover { background:#0056b3; }
+
+#outputBox {
+    margin-top: 20px;
+    white-space: pre;
+    background: #e9e9e9;
+    padding: 15px;
+    border-radius: 5px; 
+}
 </style>
 </head>
 <body>
 
-<h2>PDF → TEXT → CSV Converter</h2>
+<h2>Text → CSV Converter (Sample Based)</h2>
 
-<input type="file" id="pdfFile" accept="application/pdf">
-<button onclick="convertPDF()">Convert to CSV</button>
+<h3>1️⃣ Sample CSV Format (जिस तरह का आउटपुट चाहिए)</h3>
+<textarea id="sampleCSV" class="box" placeholder="यहाँ अपना sample CSV डालें..."></textarea>
 
-<h3>Extracted Text:</h3>
-<div id="result"></div>
+<h3>2️⃣ Raw Text Input (PDF/Text से निकला हुआ)</h3>
+<textarea id="rawText" class="box" placeholder="यहाँ गंदा text paste करें..."></textarea>
+
+<button onclick="convert()">Convert to CSV</button>
+
+<h3>Converted CSV Output:</h3>
+<pre id="outputBox"></pre>
 
 <script>
-function convertPDF() {
-    let file = document.getElementById("pdfFile").files[0];
-    if (!file) { alert("Please select a PDF file"); return; }
+function convert() {
+    let sample = document.getElementById("sampleCSV").value.trim();
+    let raw = document.getElementById("rawText").value.trim();
 
-    let reader = new FileReader();
-    reader.onload = function () {
-        let typedarray = new Uint8Array(this.result);
+    if (!sample || !raw) {
+        alert("कृपया दोनों Box भरें!");
+        return;
+    }
 
-        pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
-            let textContent = "";
+    // SAMPLE HEADER निकालें
+    let header = sample.split("\n")[0];
 
-            for (let i = 1; i <= pdf.numPages; i++) {
-                let page = await pdf.getPage(i);
-                let txt = await page.getTextContent();
-                txt.items.forEach(t => textContent += t.str + " ");
-                textContent += "\n";
-            }
+    // RAW को लाइनों में बदलें
+    let lines = raw.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-            document.getElementById("result").textContent = textContent;
+    let output = header + "\n";
 
-            // CLEAN → CSV
-            let lines = textContent
-                .replace(/\s+/g, " ") 
-                .trim()
-                .split("\n")
-                .map(l => `"${l.trim().replace(/"/g, "")}"`);
+    // SAMPLE कॉलम की संख्या के हिसाब से split
+    let columnCount = header.split(",").length;
 
-            let csvData = "Line\n" + lines.join("\n");
+    lines.forEach((line, index) => {
+        let parts = line.split(/\s+/);  // space से all split
 
-            // DOWNLOAD CSV
-            let blob = new Blob([csvData], { type: "text/csv" });
-            let link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = "output.csv";
-            link.click();
-        });
-    };
+        // columns ऑटो trim
+        let row = [];
 
-    reader.readAsArrayBuffer(file);
+        for (let i = 0; i < columnCount; i++) {
+            row.push(parts[i] ? `"${parts[i]}"` : "");
+        }
+
+        output += row.join(",") + "\n";
+    });
+
+    document.getElementById("outputBox").textContent = output;
+
+    // File Download
+    let blob = new Blob([output], { type: "text/csv" });
+    let url = URL.createObjectURL(blob);
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = "converted.csv";
+    a.click();
 }
 </script>
 
