@@ -95,9 +95,10 @@ function parseVoters() {
 
         // EPIC_NO & PartNo: नए मतदाता रिकॉर्ड की शुरुआत।
         // EPIC नंबर और Part Number (digits/digits) को मैच करता है।
-        const epicMatch = line.match(/([A-Z0-9]{3,})\s+([\d\/]+)/); 
+        // यह पैटर्न EPIC नंबर (जैसे RBG1234567) और Part Number (जैसे 15/234) को अलग-अलग पहचानता है।
+        const epicMatch = line.match(/([A-Z]{2,}\d{6,}[A-Z]{0,})\s+([\d\/]+)/); 
+        
         if(epicMatch) {
-            // पिछले रिकॉर्ड को पुश करें
             if(Object.keys(current).length) voters.push(current);
             current = {
                 SerialNo: serial++,
@@ -200,8 +201,6 @@ function pushFirebase() {
     }
     
     let success = 0, fail = 0;
-    
-    // सभी Firebase अपलोड प्रॉमिसेस को स्टोर करने के लिए एक ऐरे
     const pushPromises = [];
 
     voters.forEach(v => {
@@ -215,7 +214,6 @@ function pushFirebase() {
             // Unique Key for Firebase (Forward slash / is replaced with - for path safety)
             const key = v.EPIC_NO + '_' + v.PartNo.replace(/\//g, '-'); 
             
-            // Promise को ऐरे में जोड़ें
             const promise = db.ref('voters/' + key).set(v)
                 .then(() => success++)
                 .catch(e => {
