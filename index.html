@@ -32,117 +32,101 @@ function generateCSV() {
         return;
     }
 
-    const lines = raw.split(/\r?\n/);
+    // सभी ब्रेक, | और \n को एक सिंगल स्पेस से बदलें ताकि डेटा एक लाइन पर हो जाए
+    const cleanedRaw = raw.replace(/\|\s*/g, ' ').replace(/\n/g, ' ');
+    
+    // अब, डेटा को EPIC/PartNo पैटर्न के आधार पर विभाजित करें
+    const records = cleanedRaw.split(/(\w+\s+\d{1,3}\/\d{1,3}\/\d+)/).filter(r => r.trim() !== '');
+
     const header = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
     let output = header + '\n';
     let serial = 1;
 
-    let voter = {}; 
-    let pendingVoterName = ''; 
+    // EPIC/PartNo पैटर्न से शुरू होने वाली स्ट्रिंग में डेटा को प्रोसेस करें
+    for (let i = 0; i < records.length; i += 2) {
+        const epicPartString = records[i].trim();
+        const dataString = records[i + 1] ? records[i + 1].trim() : '';
 
-    function finalizeVoter() {
-        if (voter.EPIC_NO) {
-            if (!voter.VoterName && pendingVoterName) {
-                voter.VoterName = pendingVoterName;
-            }
+        if (!epicPartString) continue;
 
-            const row = [
-                serial++,
-                voter.EPIC_NO || 'NA',
-                voter.PartNo || 'NA',
-                `"${voter.VoterName ? voter.VoterName.replace(/"/g, '""') : 'NA'}"`,
-                `"${voter.RelationName ? voter.RelationName.replace(/"/g, '""') : 'NA'}"`,
-                voter.RelationType || 'NA',
-                voter.HouseNo || 'NA',
-                voter.Age || 'NA',
-                voter.Gender || 'NA'
-            ].join(',');
-            output += row + '\n';
-        }
-        voter = {}; 
-        pendingVoterName = ''; 
-    }
-
-    lines.forEach(line => {
-        line = line.trim();
-        if (!line || line.toLowerCase().includes('photo') || line.toLowerCase().includes('available')) return;
+        let voter = {};
         
-        // मतदाता सीरियल नंबर को अनदेखा करें
-        if (/^\d+$/.test(line) && line.length < 5) return; 
-
-        // 1. EPIC_NO (नई एंट्री की शुरुआत)
-        const epicMatch = line.match(/(\w+)\s+\d{1,3}\/\d{1,3}\/\d+/);
+        // 1. EPIC_NO and PartNo
+        const epicMatch = epicPartString.match(/(\w+)\s+\d{1,3}\/\d{1,3}\/\d+/);
         if (epicMatch) {
-            finalizeVoter(); // पिछले वोटर को फाइनल करें
-
-            voter.EPIC_NO = epicMatch[1]; 
-            const partMatch = line.match(/\d{1,3}\/\d{1,3}\/\d+/);
-            voter.PartNo = partMatch ? partMatch[0] : 'NA';
-            
-            // यदि नाम EPIC लाइन पर है
-            const nameCheck = line.match(/मतदाराचे पूर्ण\s*:\s*(.*)/) || line.match(/मतदा\d+राचे पूर्ण\s*:\s*(.*)/);
-            if (nameCheck) {
-                 voter.VoterName = nameCheck[1].replace(/नांव\s*/, '').trim();
-            }
-            return;
+            voter.EPIC_NO = epicMatch[1];
+            voter.PartNo = epicPartString.match(/\d{1,3}\/\d{1,3}\/\d+/)[0];
+        } else {
+            // यदि पैटर्न नहीं मिला, तो यह रिकॉर्ड अवैध है
+            continue; 
         }
 
-        // 2. Voter Name (मतदाराचे पूर्ण)
-        const nameMatch = line.match(/मतदाराचे पूर्ण\s*:\s*(.*)/) || line.match(/मतदा\d+राचे पूर्ण\s*:\s*(.*)/);
-        if (nameMatch) {
-             const name = nameMatch[1].replace(/नांव\s*/, '').trim();
-             if (!voter.EPIC_NO) {
-                 pendingVoterName = name;
-             } else {
-                 voter.VoterName = name;
-             }
-             return;
-        }
-
-        // 3. Age/Gender and House Number (अव्यवस्था के कारण एक साथ कैप्चर करना)
-        // Age/Gender के लिए Regex (यह Age और Gender को एक साथ कैप्चर करने की कोशिश करता है)
-        const detailsMatch = line.match(/(?:वय\s*:\s*(\d+))?\s*(?:.*लिंग\s*:\s*(पु|स्त्री|इतर))?/);
-        if (detailsMatch) {
-            if (detailsMatch[1] && !voter.Age) voter.Age = detailsMatch[1];
-            if (detailsMatch[2]) {
-                if (detailsMatch[2].includes('स्त्री')) voter.Gender = 'Female';
-                else if (detailsMatch[2].includes('पु')) voter.Gender = 'Male';
-                else voter.Gender = 'Other';
-            }
-        }
+        // पूरी डेटा स्ट्रिंग को प्रोसेस करने के लिए एक सिंगल ब्लॉक
+        const fullRecord = dataString + ' ' + epicPartString; 
         
-        // House Number के लिए Regex (घर क्रमांक को वय/लिंग से अलग निकालना)
-        const houseMatch = line.match(/घर क्रमांक\s*[:|]\s*(.*?)(?:\s*वय\s*:|\s*लिंग\s*:| Photo|$)/i);
-        if (houseMatch) {
-            const hn = houseMatch[1].trim();
-            voter.HouseNo = hn !== '' ? hn : 'NA';
+        // 2. Voter Name (सबसे कठिन)
+        // टूटे हुए "मतदाराचे पूर्ण" को संभालें
+        const nameMatch = fullRecord.match(/मतदा\s*\d*राचे पूर्ण\s*:\s*(.*?)\s*नांव/i);
+        if (nameMatch) {
+             voter.VoterName = nameMatch[1].trim();
+        } else {
+            voter.VoterName = 'NA';
         }
 
-
-        // 4. Relation Name & Type
+        // 3. Relation Name and Type
         const relationKeywords = {
             'पतीचे नाव': 'Husband',
             'वडिलांचे नाव': 'Father',
             'आईचे नाव': 'Mother',
-            'इतर': 'Other' 
+            'इतर': 'Other'
         };
 
         for (const keyword in relationKeywords) {
-            // हम केवल उन लाइनों में खोजते हैं जो स्पष्ट रूप से संबंध नाम से शुरू होती हैं या शामिल करती हैं
-            if (line.includes(keyword)) {
-                // संबंध नाम कीवर्ड के बाद कॉलन या पाइप (|) के बाद नाम निकालें
-                const nameMatch = line.match(new RegExp(`${keyword}\\s*[:|]\\s*(.*?)(?:घर क्रमांक|वय|लिंग|Photo|$|\\|)`, 'i'));
-                if (nameMatch && nameMatch[1].trim()) {
-                    voter.RelationName = nameMatch[1].trim();
-                    voter.RelationType = relationKeywords[keyword];
-                    return; 
-                }
-            }
+             // कीवर्ड के बाद कॉलन या पाइप (|) और फिर नाम निकालें
+             const relationRegex = new RegExp(`${keyword}\\s*[:|]\\s*(.*?)(?:घर क्रमांक|वय|लिंग|मतदा|Photo|${voter.EPIC_NO}|$|\\w+\\s+\\d{1,3}\/\\d{1,3}\/\\d+)`, 'i');
+             const relationMatch = fullRecord.match(relationRegex);
+             
+             if (relationMatch && relationMatch[1].trim()) {
+                 voter.RelationName = relationMatch[1].trim();
+                 voter.RelationType = relationKeywords[keyword];
+                 break;
+             }
         }
-    });
+        
+        // 4. Age and Gender
+        const detailsMatch = fullRecord.match(/वय\s*:\s*(\d+).*लिंग\s*:\s*(पु|स्त्री|इतर)/);
+        if (detailsMatch) {
+            voter.Age = detailsMatch[1];
+            if (detailsMatch[2].includes('स्त्री')) voter.Gender = 'Female';
+            else if (detailsMatch[2].includes('पु')) voter.Gender = 'Male';
+            else voter.Gender = 'Other';
+        } else {
+            voter.Age = 'NA';
+            voter.Gender = 'NA';
+        }
 
-    // अंतिम वोटर को फाइनल करें
-    finalizeVoter();
+        // 5. House Number
+        const houseMatch = fullRecord.match(/घर क्रमांक\s*[:|]\s*(.*?)(?:\s*वय\s*:|\s*लिंग\s*:| Photo|$)/i);
+        if (houseMatch) {
+            voter.HouseNo = houseMatch[1].trim();
+        } else {
+            voter.HouseNo = 'NA';
+        }
+        
+        // 6. CSV Row Output
+        const row = [
+            serial++,
+            voter.EPIC_NO || 'NA',
+            voter.PartNo || 'NA',
+            `"${voter.VoterName ? voter.VoterName.replace(/"/g, '""') : 'NA'}"`,
+            `"${voter.RelationName || 'NA'}"`,
+            voter.RelationType || 'NA',
+            voter.HouseNo || 'NA',
+            voter.Age || 'NA',
+            voter.Gender || 'NA'
+        ].join(',');
+        output += row + '\n';
+    }
 
     document.getElementById('outputCSV').textContent = output;
 }
