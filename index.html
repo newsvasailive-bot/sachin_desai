@@ -4,78 +4,119 @@
 <meta charset="UTF-8">
 <title>Voter List Auto Extractor</title>
 <style>
-body { font-family: Arial; background:#f2f2f2; padding:20px; }
-textarea { width:100%; height:250px; padding:10px; font-size:16px; }
-button { padding:10px 20px; font-size:18px; margin-top:10px; cursor:pointer; }
-table { width:100%; border-collapse: collapse; margin-top:20px; background:#fff; }
-th, td { border:1px solid #ccc; padding:8px; text-align:left; }
-th { background:#ddd; }
+body { font-family: Arial; background:#eef1f5; padding:20px; }
+textarea { width:100%; height:260px; padding:10px; font-size:16px; border:1px solid #999; }
+button { padding:10px 20px; font-size:18px; margin-top:10px; cursor:pointer; background:#007bff; color:white; border:none; }
+table { width:100%; border-collapse: collapse; margin-top:20px; background:white; }
+th, td { padding:8px; border:1px solid #ccc; }
+th { background:#007bff; color:white; }
 </style>
 </head>
 <body>
 
-<h2>Voter List Auto Extractor (100 Lines Supported)</h2>
+<h2>Voter List Auto Extractor (100+ entries)</h2>
 
-<textarea id="inputText" placeholder="Yaha voter list paste karein..."></textarea>
-<br>
-<button onclick="processData()">Convert to CSV</button>
+<textarea id="raw" placeholder="यहाँ voter list का raw text paste करें..."></textarea><br>
+<button onclick="extract()">Extract & Download CSV</button>
 
-<div id="tableContainer"></div>
+<div id="output"></div>
 
 <script>
-function processData() {
-    let text = document.getElementById("inputText").value;
+function extract() {
+    let t = document.getElementById("raw").value;
+    let lines = t.split("\n").map(x => x.trim()).filter(x => x.length > 0);
 
-    let lines = text.split("\n").map(l => l.trim()).filter(l => l);
-
-    let finalData = [];
+    let rows = [];
     let serial = 1;
 
-    for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
+    let buffer = { voterID:"", part:"", name:"", father:"", address:"", age:"", gender:"" };
 
-        // Voter ID extract
-        let voterID = line.match(/[A-Z]{3}\d{7}/)?.[0] || "NA";
+    lines.forEach(line => {
 
-        // Part Number extract
-        let part = line.match(/\d{1,3}\/\d{1,3}\/\d{1,4}/)?.[0] || "NA";
+        // Extract Voter ID
+        let vid = line.match(/[A-Z]{3}\d{7}/);
+        if (vid) buffer.voterID = vid[0];
 
-        // Name extract
-        let name = lines[i + 1]?.includes("नांव") ? lines[i + 1].replace(/.*:/, "").trim() : "NA";
+        // Extract Part Number
+        let pn = line.match(/\d{1,3}\/\d{1,3}\/\d{1,4}/);
+        if (pn) buffer.part = pn[0];
 
-        // Father/Husband Name extract
-        let relation = (lines[i + 2]?.includes("वडिलांचे") || lines[i + 2]?.includes("पतीचे")) 
-                       ? lines[i + 2].replace(/.*:/, "").trim()
-                       : "NA";
+        // Extract Name (Hindi/Marathi)
+        if (line.includes("नांव") || line.includes("मतदाराचे पूर्ण") || line.includes("Name")) {
+            buffer.name = line.split(":").pop().trim();
+        }
 
-        // Address / House No extract
-        let addressLine = lines[i + 3]?.includes("घर क्रमांक")
-                          ? lines[i + 3].replace(/.*:/, "").trim()
-                          : "NA";
+        // Extract Father / Husband name
+        if (line.includes("वडिलांचे") || line.includes("पतीचे") || line.includes("Father") || line.includes("Husband")) {
+            buffer.father = line.split(":").pop().trim();
+        }
 
-        // Age extract
-        let age = line.match(/\b\d{2}\b/)?.[0] || "NA";
+        // Extract Address / House No
+        if (line.includes("घर क्रमांक") || line.includes("House") || line.includes("Address")) {
+            buffer.address = line.split(":").pop().trim();
+        }
 
-        // Gender extract
-        let gender = line.includes("Male") ? "Male" : line.includes("Female") ? "Female" : "NA";
+        // Extract Age
+        let age = line.match(/\b(1[8-9]|[2-9][0-9]|1[0-1][0-9])\b/);
+        if (age) buffer.age = age[0];
 
-        finalData.push({
-            Serial: serial++,
-            VoterID: voterID,
-            PartNo: part,
-            Name: name,
-            Father: relation,
-            Address: addressLine,
-            Age: age,
-            Gender: gender
-        });
-    }
+        // Extract Gender
+        if (line.includes("Male")) buffer.gender = "Male";
+        if (line.includes("Female")) buffer.gender = "Female";
 
-    generateTable(finalData);
-    downloadCSV(finalData);
+        // When voterID and part detected → means new entry
+        if (buffer.voterID && buffer.part && buffer.name) {
+            rows.push({
+                Serial: serial++,
+                VoterID: buffer.voterID,
+                Part: buffer.part,
+                Name: buffer.name,
+                Father: buffer.father || "NA",
+                Address: buffer.address || "NA",
+                Age: buffer.age || "NA",
+                Gender: buffer.gender || "NA"
+            });
+
+            buffer = { voterID:"", part:"", name:"", father:"", address:"", age:"", gender:"" };
+        }
+    });
+
+    // Show table
+    let html = "<table><tr><th>S.No</th><th>VoterID</th><th>Part</th><th>Name</th><th>Father/Husband</th><th>Address</th><th>Age</th><th>Gender</th></tr>";
+    rows.forEach(r => {
+        html += `<tr>
+            <td>${r.Serial}</td>
+            <td>${r.VoterID}</td>
+            <td>${r.Part}</td>
+            <td>${r.Name}</td>
+            <td>${r.Father}</td>
+            <td>${r.Address}</td>
+            <td>${r.Age}</td>
+            <td>${r.Gender}</td>
+        </tr>`;
+    });
+    html += "</table>";
+
+    document.getElementById("output").innerHTML = html;
+
+    downloadCSV(rows);
 }
 
-function generateTable(data) {
-    let html = "<table><tr><th>Serial</th><th>VoterID</th><th>Part</th><th>Name</th><th>Father/Husband</th><th>Address</th><th>Age</th><th>Gender</th></tr>";
+function downloadCSV(rows) {
+    let csv = "Serial,VoterID,Part,Name,Father,Address,Age,Gender\n";
+    rows.forEach(r => {
+        csv += `${r.Serial},${r.VoterID},${r.Part},"${r.Name}","${r.Father}","${r.Address}",${r.Age},${r.Gender}\n`;
+    });
 
-    data
+    let blob = new Blob([csv], { type: "text/csv" });
+    let url = URL.createObjectURL(blob);
+
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = "voters.csv";
+    a.click();
+}
+</script>
+
+</body>
+</html>
