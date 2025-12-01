@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter List CSV Fixer - Final</title>
+<title>Voter List CSV Fixer - Final Debug</title>
 <style>
 body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
 h2 { text-align: center; color: #333; }
 p { text-align: center; }
 textarea { 
     width: 100%; 
-    height: 350px; /* इनपुट बॉक्स */
+    height: 350px; 
     margin-bottom: 15px; 
     padding: 15px; 
     font-size: 14px; 
@@ -34,31 +34,32 @@ textarea {
     width: 100%;
 }
 #generateButton {
-    background-color: #007bff; /* नीला */
+    background-color: #dc3545; /* लाल/त्रुटि रंग */
     color: white;
 }
-#generateButton:hover { background-color: #0056b3; }
+#generateButton:hover { background-color: #c82333; }
 
 #copyButton {
-    background-color: #28a745; /* हरा */
+    background-color: #28a745; 
     color: white;
 }
 #copyButton:hover { background-color: #218838; }
 
 #outputCSV {
     width: 100%; 
-    height: 300px; /* आउटपुट बॉक्स */
+    height: 300px; 
     padding: 10px; 
     font-family: Consolas, monospace;
     font-size: 13px;
     border: 1px solid #ddd;
     box-sizing: border-box;
+    white-space: pre-wrap;
 }
 </style>
 </head>
 <body>
 
-<h2>Voter List CSV Fixer 🛠️</h2>
+<h2>Voter List CSV Fixer ❌ (Debugging Mode)</h2>
 <p>Raw voter text यहाँ paste करें:</p>
 <textarea id="inputText" placeholder="कच्चा टेक्स्ट यहाँ पेस्ट करें"></textarea>
 
@@ -90,37 +91,45 @@ function generateCSV() {
     const cleanedRaw = raw.replace(/\|\s*/g, ' ').replace(/\n/g, ' ');
     
     // 2. EPIC पैटर्न के आधार पर रिकॉर्ड को विभाजित करें।
-    // हम केवल 7+ अक्षरों/संख्याओं के EPIC पैटर्न को देखकर विभाजित करेंगे (सबसे लचीला तरीका)।
+    // EPIC: \w{7,} (कम से कम 7 अल्फ़ान्यूमेरिक अक्षर)
+    // PartNo: (\d{1,3}\/\d{1,3}\/\d+)? (ऑप्शनल पार्ट नंबर)
     const epicPartPattern = /(\w{7,})\s*(\d{1,3}\/\d{1,3}\/\d+)?/g; 
     
     const records = cleanedRaw.split(epicPartPattern).filter(r => r.trim() !== '');
 
     let combinedRecords = [];
-    // रिकॉर्ड्स ऐरे को EPIC + बाकी डेटा में कंबाइन करें
-    for (let i = 0; i < records.length; i += 2) {
-        // हम records[i] (EPIC) और records[i+1] (PartNo) और records[i+2] (डेटा) को एक साथ ला रहे हैं
-        if (records[i] && records[i+1] && records[i+2]) {
-            // records[i] = EPIC, records[i+1] = PartNo, records[i+2] = Data
-            // हम EPIC और PartNo को डेटा के साथ जोड़ते हैं
-            combinedRecords.push(records[i].trim() + ' ' + records[i+1].trim() + ' ' + records[i+2].trim());
-            i++; // क्योंकि हमने 3 आइटम्स को प्रोसेस कर लिया है (EPIC, PartNo, Data)
-        } else if (records[i] && records[i+1]) {
-            // यदि केवल EPIC और डेटा ही है
-            combinedRecords.push(records[i].trim() + ' ' + records[i+1].trim());
-        }
-    }
     
-    if (combinedRecords.length === 0) {
-        outputElement.value = 
-            "❌ त्रुटि: रिकॉर्ड नहीं मिले। कृपया जांचें कि टेक्स्ट में 'RBG1234567' जैसे EPIC नंबर मौजूद हैं।";
+    // 3. विभाजन की जाँच
+    if (records.length === 0) {
+        outputElement.value = "❌ त्रुटि: विभाजन विफल। कोई EPIC पैटर्न नहीं मिला।";
         return;
     }
 
+    // 4. records array को व्यवस्थित करें
+    // records के स्ट्रक्चर को देखते हुए, हम हर 3 तत्वों को एक रिकॉर्ड मानते हैं (EPIC, PartNo, Data)
+    for (let i = 0; i < records.length; i += 3) {
+        let epic = records[i]; // EPIC नंबर
+        let part = records[i+1] || ''; // PartNo
+        let data = records[i+2] || ''; // डेटा
+        
+        // यदि EPIC और डेटा दोनों मौजूद हैं, तो इसे एक रिकॉर्ड के रूप में जोड़ें
+        if (epic.trim() && data.trim()) {
+             // डेटा को एक साथ जोड़ें: EPIC + PartNo + Data
+             combinedRecords.push(epic.trim() + ' ' + part.trim() + ' ' + data.trim());
+        }
+    }
+
+    if (combinedRecords.length === 0) {
+        outputElement.value = 
+            "❌ त्रुटि: डेटा विभाजन सफल हुआ, लेकिन कोई भी पूर्ण रिकॉर्ड नहीं मिला। यह टेक्स्ट प्रारूप में एक बड़ी विसंगति का संकेत है।";
+        return;
+    }
+    
+    // **************** पार्सिंग शुरू ****************
     const header = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
     let output = header + '\n';
     let serial = 1;
 
-    // 3. डेटा को प्रोसेस करें (अब हम सीधे combinedRecords पर लूप करेंगे)
     combinedRecords.forEach(fullRecord => {
         let voter = {};
         
@@ -186,6 +195,7 @@ function generateCSV() {
         ].join(',');
         output += row + '\n';
     });
+    // **************** पार्सिंग समाप्त ****************
 
     outputElement.value = output;
     copyButton.disabled = false;
@@ -203,7 +213,6 @@ function copyCSV() {
     
     // टेक्स्ट को क्लिपबोर्ड पर कॉपी करें
     navigator.clipboard.writeText(outputElement.value).then(() => {
-        // कॉपी होने पर बटन का टेक्स्ट बदलें
         const copyButton = document.getElementById('copyButton');
         copyButton.textContent = '✅ कॉपी हो गया!';
         setTimeout(() => {
