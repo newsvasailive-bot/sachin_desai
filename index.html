@@ -7,8 +7,8 @@
 <style>
 body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
 h2 { text-align: center; }
-textarea { width: 100%; height: 250px; padding: 10px; margin-bottom: 10px; font-size: 14px; }
-button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin-bottom: 20px; }
+textarea { width: 100%; height: 250px; margin-bottom: 10px; padding: 10px; font-size: 14px; }
+button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
 pre { background: #fff; padding: 10px; border: 1px solid #ccc; overflow-x: auto; white-space: pre-wrap; }
 </style>
 </head>
@@ -26,74 +26,102 @@ pre { background: #fff; padding: 10px; border: 1px solid #ccc; overflow-x: auto;
 <script>
 function generateCSV() {
     const raw = document.getElementById('inputText').value.trim();
-    if(!raw) { alert("कृपया text डालें"); return; }
+    if(!raw) { alert("Text डालें"); return; }
 
-    const lines = raw.split(/\r?\n/).filter(line => line.trim() !== '');
+    const lines = raw.split(/\r?\n/);
     const header = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
     let output = header + '\n';
     let serial = 1;
 
-    let currentVoter = {}; // Temporary object to hold voter info
+    let voter = {}; // temporary voter object
+
+    function finalizeVoter() {
+        if(Object.keys(voter).length === 0) return;
+        const row = [
+            serial++,
+            voter.EPIC_NO || 'NA',
+            voter.PartNo || 'NA',
+            `"${voter.VoterName || 'NA'}"`,
+            voter.RelationName || 'NA',
+            voter.RelationType || 'NA',
+            voter.HouseNo || 'NA',
+            voter.Age || 'NA',
+            voter.Gender || 'NA'
+        ].join(',');
+        output += row + '\n';
+        voter = {}; // reset
+    }
 
     lines.forEach(line => {
         line = line.trim();
+        if(!line || line.toLowerCase().includes('photo') || line.toLowerCase().includes('available')) return;
 
         // EPIC_NO
         const epicMatch = line.match(/RBG\d+/);
-        if(epicMatch) currentVoter.EPIC_NO = epicMatch[0];
+        if(epicMatch) {
+            finalizeVoter();
+            voter.EPIC_NO = epicMatch[0];
+            const partMatch = line.match(/\d{1,3}\/\d{1,3}\/\d+/);
+            voter.PartNo = partMatch ? partMatch[0] : 'NA';
+            return;
+        }
 
-        // PartNo
-        const partMatch = line.match(/\d{1,3}\/\d{1,3}\/\d+/);
-        if(partMatch) currentVoter.PartNo = partMatch[0];
+        // Voter Name
+        if(line.includes('मतदाराचे पूर्ण:') || line.includes('मतदाराचे पूर्ण :')) {
+            voter.VoterName = line.replace(/मतदाराचे पूर्ण[:\s]+/,'').trim();
+            return;
+        }
+
+        // Relation Name
+        if(line.includes('पतीचे नाव')) {
+            voter.RelationName = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
+            voter.RelationType = 'Husband';
+            return;
+        }
+        if(line.includes('वडिलांचे नाव')) {
+            voter.RelationName = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
+            voter.RelationType = 'Father';
+            return;
+        }
+        if(line.includes('आईचे नाव')) {
+            voter.RelationName = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
+            voter.RelationType = 'Mother';
+            return;
+        }
+
+        // House Number
+        if(line.includes('घर क्रमांक')) {
+            const hn = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
+            voter.HouseNo = hn !== '' ? hn : 'NA';
+            return;
+        }
 
         // Age
-        const ageMatch = line.match(/वय\s*[:]\s*([\d०-९]+)/);
-        if(ageMatch) currentVoter.Age = ageMatch[1].replace(/[^\d]/g,'');
+        if(line.includes('वय')) {
+            const ageMatch = line.match(/\d+/);
+            voter.Age = ageMatch ? ageMatch[0] : 'NA';
+            return;
+        }
 
         // Gender
-        if(line.includes('लिंग : स्त्री')) currentVoter.Gender = 'Female';
-        else if(line.includes('लिंग : पु')) currentVoter.Gender = 'Male';
-
-        // Relation
-        if(line.includes('पतीचे नाव')) {
-            currentVoter.RelationType = 'Husband';
-            currentVoter.RelationName = line.split(':')[1]?.trim() || 'NA';
-        }
-        else if(line.includes('वडिलांचे नाव')) {
-            currentVoter.RelationType = 'Father';
-            currentVoter.RelationName = line.split(':')[1]?.trim() || 'NA';
+        if(line.includes('लिंग')) {
+            if(line.includes('स्त्री')) voter.Gender = 'Female';
+            else if(line.includes('पु')) voter.Gender = 'Male';
+            return;
         }
 
-        // HouseNo
-        if(line.includes('घर क्रमांक')) currentVoter.HouseNo = line.split(':')[1]?.trim() || 'NA';
-
-        // VoterName (lines not containing EPIC, PartNo, Age, Gender, Relation, HouseNo)
-        if(!line.match(/RBG\d+/) && !line.match(/\d{1,3}\/\d{1,3}\/\d+/) &&
-           !line.includes('वय') && !line.includes('लिंग') &&
-           !line.includes('पतीचे नाव') && !line.includes('वडिलांचे नाव') &&
-           !line.includes('घर क्रमांक') && line.length>0) {
-            currentVoter.VoterName = line.replace(/\|/g,'').trim();
+        // Sometimes line is just number (like 572, 573)
+        if(/^\d+$/.test(line)) {
+            voter.VoterName = line;
+            return;
         }
 
-        // If we have enough info to output row (VoterName + EPIC_NO)
-        if(currentVoter.VoterName && currentVoter.EPIC_NO) {
-            const row = [
-                serial,
-                currentVoter.EPIC_NO || 'NA',
-                currentVoter.PartNo || 'NA',
-                `"${currentVoter.VoterName}"`,
-                currentVoter.RelationName || 'NA',
-                currentVoter.RelationType || 'NA',
-                currentVoter.HouseNo || 'NA',
-                currentVoter.Age || 'NA',
-                currentVoter.Gender || 'NA'
-            ].join(',');
-            output += row + '\n';
-            serial++;
-
-            currentVoter = {}; // reset for next voter
-        }
+        // If voterName not set, take first meaningful text
+        if(!voter.VoterName) voter.VoterName = line;
     });
+
+    // Finalize last voter
+    finalizeVoter();
 
     document.getElementById('outputCSV').textContent = output;
 }
