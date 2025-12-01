@@ -55,72 +55,74 @@ function extract() {
         voter.Age = voter.Age || "NA";
         voter.Gender = voter.Gender || "NA";
         voter.PartNo = voter.PartNo || "NA";
-
         results.push({ ...voter });
         voter = {};
     }
 
     lines.forEach(line => {
-
-        // NEW VOTER START = SERIAL NO
+        // SerialNo
         if (/^\d{1,4}$/.test(line)) {
             save();
             voter.SerialNo = line;
             return;
         }
 
-        // EPIC & PART
-        if (/^[A-Z]{3}\d{6,}/.test(line)) {
-            voter.EPIC_NO = line.match(/^[A-Z]{3}\d{6,}/)[0];
-            let p = line.match(/\d+\/\d+\/\d+/);
+        // EPIC_NO + PartNo (ignore spaces)
+        if (/^[A-Z]{3}\d{5,}/.test(line.replace(/\s/g, ""))) {
+            let cleaned = line.replace(/\s/g, "");
+            voter.EPIC_NO = cleaned.match(/^[A-Z]{3}\d{5,}/)[0];
+            let p = cleaned.match(/\d+\/\d+\/\d+/);
             if (p) voter.PartNo = p[0];
             return;
         }
 
-        // NAME
+        // Voter Name
         if (line.includes("मतदाराचे पूर्ण") || line.includes("मतदाराचे नाव") || line.includes("नांव")) {
-            voter.VoterName = line.split(":").pop().trim();
+            let parts = line.split(":");
+            voter.VoterName = parts.length > 1 ? parts.pop().trim() : line.replace(/.*नांव/, "").trim();
             return;
         }
 
-        // HUSBAND
+        // Relation – Husband
         if (line.includes("पतीचे") || line.includes("पति")) {
             voter.RelationType = "Husband";
-            voter.RelationName = line.split(":").pop().trim();
+            let parts = line.split(":");
+            voter.RelationName = parts.length > 1 ? parts.pop().trim() : line.replace(/पतीचे|पति/, "").trim();
             return;
         }
 
-        // FATHER
+        // Relation – Father
         if (line.includes("वडिलांचे") || line.includes("वडील") || line.includes("Father")) {
             voter.RelationType = "Father";
-            voter.RelationName = line.split(":").pop().trim();
+            let parts = line.split(":");
+            voter.RelationName = parts.length > 1 ? parts.pop().trim() : line.replace(/वडिलांचे|वडील|Father/, "").trim();
             return;
         }
 
-        // HOUSE NO
+        // House No
         if (line.includes("घर क्रमांक")) {
             voter.HouseNo = line.split(":").pop().trim() || "NA";
             return;
         }
 
-        // AGE
+        // Age
         if (line.includes("वय")) {
             voter.Age = line.split(":").pop().trim();
             return;
         }
 
-        // GENDER
+        // Gender
         if (line.includes("लिंग") || line.includes("Gender")) {
             if (line.includes("स्त्री") || line.includes("Female")) voter.Gender = "Female";
             else voter.Gender = "Male";
+            save(); // Important: save voter when gender is found
             return;
         }
-
     });
 
-    save(); 
+    save(); // last voter
 
-    // SHOW
+    // Show in table
     results.forEach(r => {
         tbody.innerHTML += `
         <tr>
@@ -147,7 +149,7 @@ function downloadCSV() {
         csv += `${r.SerialNo},${r.EPIC_NO},${r.PartNo},"${r.VoterName}","${r.RelationName}","${r.RelationType}","${r.HouseNo}","${r.Age}","${r.Gender}"\n`;
     });
 
-    const blob = new Blob([csv], { type: "text/csv" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "voter_list.csv";
