@@ -8,7 +8,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-database-compat.js"></script>
 <style>
 body { font-family: Arial; padding:20px; background:#f9f9f9; }
-textarea { width:100%; height:250px; margin-bottom:10px; }
+textarea { width:100%; height:300px; margin-bottom:10px; }
 button { padding:10px 20px; margin:5px; cursor:pointer; }
 pre { background:#eee; padding:10px; overflow-x:auto; max-height:300px; }
 </style>
@@ -49,25 +49,24 @@ let voters = [];
 
 function parseVoters() {
     const text = document.getElementById('voterText').value;
-    const lines = text.split(/\r?\n/);
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.includes("Photo"));
 
     voters = [];
     let serial = 1;
     let current = null;
 
-    lines.forEach((line, idx) => {
-        line = line.trim();
-        if (!line || line.includes("Photo")) return; // skip empty/photo lines
+    lines.forEach(line => {
 
-        // EPIC_NO & PartNo detection
-        const epicMatch = line.match(/RBG\d+[_\s]?\d*\/?\d*\/?\d*/);
-        if (epicMatch) {
+        // EPIC_NO detection
+        if (line.match(/^RBG\d+/)) {
             if (current) voters.push(current);
-            const parts = epicMatch[0].split(/[_\s]+/);
+            let parts = line.split(/\s+/);
+            let epic = parts[0] || "NA";
+            let part = parts[1] || "NA";
             current = {
                 SerialNo: serial++,
-                EPIC_NO: parts[0] || "NA",
-                PartNo: parts[1] || "NA",
+                EPIC_NO: epic,
+                PartNo: part,
                 VoterName: "NA",
                 RelationName: "NA",
                 RelationType: "NA",
@@ -78,48 +77,43 @@ function parseVoters() {
             return;
         }
 
-        // VoterName
+        // Voter Name
         if (line.includes("मतदाराचे पूर्ण")) {
             let name = line.split(':')[1]?.trim();
-            if (!name && lines[idx+1]) name = lines[idx+1].trim(); // next line
-            if (name) current.VoterName = name;
+            current.VoterName = name || "NA";
             return;
         }
 
-        // RelationName & Type
+        // Relation Name
         if (line.includes("पतीचे नाव")) {
-            const name = line.split(':')[1]?.trim() || "NA";
-            current.RelationName = name;
+            current.RelationName = line.split(':')[1]?.trim() || "NA";
             current.RelationType = "Husband";
             return;
         }
         if (line.includes("वडिलांचे नाव")) {
-            const name = line.split(':')[1]?.trim() || "NA";
-            current.RelationName = name;
+            current.RelationName = line.split(':')[1]?.trim() || "NA";
             current.RelationType = "Father";
             return;
         }
 
-        // HouseNo
+        // House No
         if (line.includes("घर क्रमांक")) {
-            const house = line.split(':')[1]?.trim() || line.replace("घर क्रमांक","").trim() || "NA";
+            let house = line.split(':')[1]?.trim() || line.replace("घर क्रमांक","").trim() || "NA";
             current.HouseNo = house;
             return;
         }
 
         // Age
         if (line.includes("वय")) {
-            const age = line.split(':')[1]?.trim() || "NA";
+            let age = line.split(':')[1]?.trim() || "NA";
             current.Age = age;
             return;
         }
 
         // Gender
         if (line.includes("लिंग")) {
-            const g = line.split(':')[1]?.trim() || "";
-            if (g==='पु') current.Gender = 'Male';
-            else if (g==='स्त्री') current.Gender = 'Female';
-            else current.Gender = 'NA';
+            let g = line.split(':')[1]?.trim();
+            current.Gender = (g==='पु')?'Male':(g==='स्त्री'?'Female':'NA');
             return;
         }
     });
@@ -133,6 +127,8 @@ function parseVoters() {
 
     // Display JSON
     document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
+
+    alert(`Parsed ${voters.length} voters successfully!`);
 }
 
 // ===== Download Functions =====
@@ -156,6 +152,7 @@ function downloadJSON() {
 
 // ===== Firebase Push =====
 function pushFirebase() {
+    if(voters.length===0){ alert("Please parse voters first!"); return;}
     voters.forEach(v => {
         const newRef = db.ref('voters').push();
         newRef.set(v);
