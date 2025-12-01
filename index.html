@@ -2,18 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter CSV Cleaner</title>
+<title>Clean Voter CSV</title>
 </head>
 <body>
-
-<h2>Paste your messy voter data below:</h2>
-<textarea id="rawData" rows="15" cols="100" placeholder="Paste raw voter data here..."></textarea>
+<h2>Paste Voter Data</h2>
+<textarea id="rawData" rows="15" cols="100" placeholder="Paste messy voter data here..."></textarea>
 <br><br>
-<button onclick="generateCSV()">Generate Clean CSV</button>
+<button onclick="generateCSV()">Generate CSV</button>
 <br><br>
-<h3>Clean CSV Output:</h3>
-<textarea id="csvOutput" rows="15" cols="100"></textarea>
+<textarea id="csvOutput" rows="15" cols="100" placeholder="Clean CSV will appear here"></textarea>
 <br>
 <button onclick="copyCSV()">Copy CSV</button>
 
@@ -23,35 +20,25 @@ function generateCSV() {
     const lines = rawText.split(/\r?\n/);
 
     const csvRows = [];
-    // CSV header
     csvRows.push("SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender");
 
-    let serialNo = "";
-    let epicNo = "";
-    let partNo = "";
-    let voterName = "";
-    let relationName = "";
-    let relationType = "";
-    let houseNo = "";
-    let age = "";
-    let gender = "";
+    let serialNo = "", epicNo = "", partNo = "", voterName = "", relationName = "", relationType = "", houseNo = "", age = "", gender = "";
 
     lines.forEach(line => {
         line = line.trim();
-        if (!line) return; // skip empty lines
+        if (!line) return; // skip empty
+        if (line.startsWith("<") || line.startsWith("} else") || line.startsWith("function") || line.startsWith("//")) return; // skip HTML/JS comments
 
-        // SerialNo detection: line starts with a number or "NA"
+        // Detect serialNo: number or NA at start
         const serialMatch = line.match(/^(\d+|NA)/);
         if (serialMatch) {
-            // If previous voterName exists, push previous row
-            if (voterName) {
+            if (voterName) { // push previous row
                 csvRows.push([
-                    serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType,
-                    `"${houseNo}"`, `"${age}"`, gender
+                    serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType, `"${houseNo}"`, `"${age}"`, gender
                 ].join(","));
             }
 
-            // Reset variables
+            // Reset for new row
             serialNo = serialMatch[1];
             epicNo = "";
             partNo = "";
@@ -62,37 +49,29 @@ function generateCSV() {
             age = "";
             gender = "";
 
-            // Extract EPIC_NO and PartNo if present
+            // Extract EPIC_NO / PartNo if present
             const parts = line.split(/[\s,]+/);
             if (parts[1] && parts[1].startsWith("RBG")) epicNo = parts[1];
             if (parts[2]) partNo = parts[2];
-
-            // Extract remaining as voterName
             voterName = parts.slice(3).join(" ").trim();
-
         } else {
-            // Handle lines with data like gender, houseNo, age, relationType etc.
-            if (line.match(/Male|Female|स्त्री|पु/i)) {
-                gender = line;
-            } else if (line.match(/Husband|Father|Mother/i)) {
-                relationType = line;
-            } else if (line.match(/घर क्रमांक/i)) {
-                houseNo = line;
-            } else if (line.match(/\d+/)) {
-                age = line;
-            } else if (!voterName) {
-                voterName = line;
-            } else if (!relationName) {
-                relationName = line;
-            }
+            // Detect relationType
+            if (line.match(/Husband|Father|Mother/i)) relationType = line;
+            // Detect gender
+            if (line.match(/Male|Female|स्त्री|पु/i)) gender = line;
+            // Detect houseNo
+            if (line.match(/घर क्रमांक/i)) houseNo = line;
+            // Detect age (numbers)
+            if (line.match(/^\d+$/)) age = line;
+            // If still voterName empty
+            if (!voterName) voterName = line;
         }
     });
 
     // Push last row
     if (voterName) {
         csvRows.push([
-            serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType,
-            `"${houseNo}"`, `"${age}"`, gender
+            serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType, `"${houseNo}"`, `"${age}"`, gender
         ].join(","));
     }
 
@@ -103,9 +82,8 @@ function copyCSV() {
     const csvText = document.getElementById('csvOutput');
     csvText.select();
     document.execCommand("copy");
-    alert("CSV copied to clipboard!");
+    alert("CSV copied!");
 }
 </script>
-
 </body>
 </html>
