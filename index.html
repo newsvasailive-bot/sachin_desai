@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voter List Auto Extractor (Robust)</title>
+<title>Voter CSV Exact Format Extractor</title>
 <style>
 body { font-family: Arial; background:#f9f9f9; padding:20px; }
 textarea { width:100%; height:250px; padding:10px; font-size:14px; }
@@ -14,9 +14,9 @@ th { background:#333; color:#fff; }
 </head>
 <body>
 
-<h2>Voter List Auto Extractor (Robust)</h2>
+<h2>Voter List Auto Extractor (Exact CSV Format)</h2>
 
-<textarea id="input" placeholder="Yahan poora voter list paste karein..."></textarea><br>
+<textarea id="input" placeholder="Yahan voter list paste karein..."></textarea><br>
 <button onclick="extract()">Extract & Show</button>
 <button onclick="downloadCSV()">Download CSV</button>
 
@@ -38,6 +38,11 @@ th { background:#333; color:#fff; }
 </table>
 
 <script>
+function cleanText(str) {
+    if (!str) return "NA";
+    return String(str).replace(/"/g, "").trim();
+}
+
 function extract() {
     let text = document.getElementById("input").value;
     let lines = text.split("\n");
@@ -45,73 +50,72 @@ function extract() {
     tbody.innerHTML = "";
     let results = [];
 
-    let serial = "", voterID = "", partNo = "", name = "", relName = "", relType = "", house = "", age = "", gender = "";
+    let serial="", voterID="", partNo="", name="", relName="", relType="", house="00", age="NA", gender="NA";
 
     lines.forEach(line => {
         line = line.trim();
         if (!line) return;
 
-        // SerialNo
         if (/^\d+$/.test(line)) {
             serial = line;
             return;
         }
 
-        // EPIC + Part
         if (/^[A-Z]{3}\d{7}/.test(line)) {
-            let parts = line.split(" ");
-            voterID = parts[0];
-            partNo = parts[1] || "";
+            let p = line.split(" ");
+            voterID = p[0];
+            partNo = p[1] || "";
             return;
         }
 
-        // Name
         if (line.includes("मतदाराचे पूर्ण") || line.includes("नांव")) {
             name = line.replace(/.*[: ]/, "").trim();
             return;
         }
 
-        // Father / Husband
-        if (line.includes("वडिलांचे नाव")) {
-            relName = line.replace(/.*:/, "").trim();
-            relType = "Father";
-            return;
-        }
         if (line.includes("पतीचे नाव")) {
-            relName = line.replace(/.*:/, "").trim();
             relType = "Husband";
+            relName = line.replace(/.*:/, "").trim();
             return;
         }
 
-        // HouseNo
+        if (line.includes("वडिलांचे नाव")) {
+            relType = "Father";
+            relName = line.replace(/.*:/, "").trim();
+            return;
+        }
+
         if (line.includes("घर क्रमांक")) {
-            house = line.replace(/.*:/, "").trim();
+            house = line.replace(/.*:/, "").trim() || "00";
             return;
         }
 
-        // Age
         if (line.includes("वय")) {
             age = line.replace(/.*:/, "").trim();
             return;
         }
 
-        // Gender
         if (line.includes("लिंग")) {
             gender = line.includes("पु") ? "Male" : "Female";
 
-            // Push record
             results.push({
-                serial, voterID, partNo, name, relName, relType, house, age, gender
+                serial, voterID, partNo,
+                name: cleanText(name),
+                relName: cleanText(relName),
+                relType: cleanText(relType),
+                house: cleanText(house || "00"),
+                age: cleanText(age),
+                gender
             });
 
-            // Reset temp vars except SerialNo for next
-            voterID = partNo = name = relName = relType = house = age = gender = "";
+            voterID=partNo=name=relName=relType="";
+            house="00"; age="NA"; gender="NA";
         }
     });
 
-    // Show in table
     results.forEach(r => {
-        let tr = `<tr>
+        tbody.innerHTML += `
+        <tr>
             <td>${r.serial}</td>
             <td>${r.voterID}</td>
             <td>${r.partNo}</td>
@@ -122,23 +126,23 @@ function extract() {
             <td>${r.age}</td>
             <td>${r.gender}</td>
         </tr>`;
-        tbody.innerHTML += tr;
     });
 
     window.extracted = results;
 }
 
 function downloadCSV() {
-    if (!window.extracted) return;
+    if (!window.extracted) return alert("Extract pehle karein!");
 
-    let csv = "SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender\n";
+    let csv = "";
     window.extracted.forEach(r => {
-        csv += `${r.serial || ""},${r.voterID || ""},${r.partNo || ""},${r.name || ""},${r.relName || ""},${r.relType || ""},${r.house || ""},${r.age || ""},${r.gender || ""}\n`;
+        csv += `${r.serial},${r.voterID},${r.partNo},"${r.name}","${r.relName}","${r.relType}","${r.house}","${r.age}","${r.gender}"\n`;
     });
 
-    let blob = new Blob([csv], { type: "text/csv" });
-    let url = URL.createObjectURL(blob);
-    let a = document.createElement("a");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
     a.href = url;
     a.download = "voter_list.csv";
     a.click();
