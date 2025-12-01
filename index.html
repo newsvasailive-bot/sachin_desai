@@ -3,74 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter CSV Generator 🔥</title>
+<title>Voter CSV Cleaner & Generator</title>
 <style>
-body { font-family: Arial,sans-serif; background:#f7f7f7; padding:20px; }
+body { font-family: Arial, sans-serif; background:#f7f7f7; padding:20px; }
 h2 { text-align:center; color:#333; }
 textarea { width:100%; height:300px; padding:10px; margin-bottom:15px; font-size:14px; box-sizing:border-box; resize: vertical; }
 .button-container { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
 button { flex:1; padding:12px; font-size:16px; cursor:pointer; border:none; border-radius:5px; color:white; transition:.3s; }
 #generateButton { background:#007bff; } #generateButton:hover { background:#0056b3; }
 #copyButton { background:#28a745; } #copyButton:hover { background:#218838; }
+#downloadButton { background:#ffc107; color:#000; } #downloadButton:hover { background:#e0a800; }
 #outputCSV { width:100%; height:300px; padding:10px; font-family:Consolas,monospace; font-size:13px; border:1px solid #ddd; box-sizing:border-box; white-space:pre-wrap; }
 </style>
 </head>
 <body>
 
-<h2>Voter List CSV Generator 🚀</h2>
+<h2>Voter CSV Cleaner & Generator 🚀</h2>
 <p>Raw voter text paste करें:</p>
 <textarea id="inputText" placeholder="Raw voter text paste करें..."></textarea>
 
 <div class="button-container">
 <button id="generateButton">CSV Generate करें</button>
 <button id="copyButton" disabled>📋 Copy CSV</button>
+<button id="downloadButton" disabled>⬇️ Download CSV</button>
 </div>
 
 <h3>Generated CSV:</h3>
 <textarea id="outputCSV" readonly placeholder="CSV output यहाँ दिखेगा..."></textarea>
 
 <script>
-function smartParseVoterText(text){
+function parseVoterTextToCSV(text){
     const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l!=="");
     const csvRows = [];
     const header = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
     csvRows.push(header.join(","));
 
-    let serialNo=1;
-    let current = {};
+    let current={};
 
-    for(let i=0;i<lines.length;i++){
-        let line = lines[i];
+    const saveCurrentVoter = () => {
+        if(current.EPIC_NO){
+            csvRows.push([
+                current.SerialNo||"NA",
+                current.EPIC_NO||"NA",
+                current.PartNo||"NA",
+                current.VoterName||"NA",
+                current.RelationName||"NA",
+                current.RelationType||"NA",
+                current.HouseNo||"NA",
+                current.Age||"NA",
+                current.Gender||"NA"
+            ].map(v=>v.includes(",")?`"${v}"`:v).join(","));
+        }
+    };
 
-        // EPIC_NO + PartNo detection
-        let epicMatch = line.match(/([A-Z]{2,3}\d+)\s+(\d+\/\d+\/\d+)/);
+    for(let line of lines){
+        // SerialNo detection
+        const serialMatch = line.match(/^(\d+)[,|\s]/);
+        if(serialMatch){
+            current.SerialNo = serialMatch[1];
+        }
+
+        // EPIC_NO + PartNo
+        const epicMatch = line.match(/([A-Z]{2,3}\d+)\s+(\d+\/\d+\/\d+)/);
         if(epicMatch){
-            // Save previous voter
-            if(current.EPIC_NO) {
-                csvRows.push([
-                    serialNo,
-                    current.EPIC_NO || "NA",
-                    current.PartNo || "NA",
-                    current.VoterName || "NA",
-                    current.RelationName || "NA",
-                    current.RelationType || "NA",
-                    current.HouseNo || "NA",
-                    current.Age || "NA",
-                    current.Gender || "NA"
-                ].join(","));
-                serialNo++;
-            }
-            // Start new voter
-            current = {
-                EPIC_NO: epicMatch[1],
-                PartNo: epicMatch[2],
-                VoterName: "",
-                RelationName: "",
-                RelationType: "",
-                HouseNo: "",
-                Age: "",
-                Gender: ""
-            };
+            saveCurrentVoter();
+            current = {SerialNo:current.SerialNo||"NA", EPIC_NO:epicMatch[1], PartNo:epicMatch[2], VoterName:"", RelationName:"", RelationType:"", HouseNo:"", Age:"", Gender:""};
             continue;
         }
 
@@ -79,7 +76,7 @@ function smartParseVoterText(text){
             current.VoterName = line.replace(/मतदाराचे पूर्ण:|नांव|Photo|Available/gi,"").trim() || current.VoterName;
         }
 
-        // Relation Name & Type
+        // Relation
         if(/वडिलांचे नाव/.test(line)){
             current.RelationName = line.replace(/वडिलांचे नाव|Available/gi,"").trim();
             current.RelationType = "Father";
@@ -93,12 +90,12 @@ function smartParseVoterText(text){
 
         // HouseNo
         if(/घर क्रमांक/.test(line)){
-            current.HouseNo = line.replace(/घर क्रमांक[:]?/,"").trim();
+            current.HouseNo = line.replace(/घर क्रमांक[:]?/,"").trim() || current.HouseNo;
         }
 
         // Age
         if(/वय/.test(line)){
-            let m = line.match(/वय[:]? (\d+)/);
+            const m = line.match(/वय[:]? (\d+)/);
             if(m) current.Age = m[1];
         }
 
@@ -110,40 +107,34 @@ function smartParseVoterText(text){
     }
 
     // Last voter
-    if(current.EPIC_NO){
-        csvRows.push([
-            serialNo,
-            current.EPIC_NO || "NA",
-            current.PartNo || "NA",
-            current.VoterName || "NA",
-            current.RelationName || "NA",
-            current.RelationType || "NA",
-            current.HouseNo || "NA",
-            current.Age || "NA",
-            current.Gender || "NA"
-        ].join(","));
-    }
+    saveCurrentVoter();
 
     return csvRows.join("\n");
 }
 
 document.getElementById("generateButton").addEventListener("click",()=>{
     const inputText = document.getElementById("inputText").value;
-    if(!inputText.trim()){
-        alert("कृपया raw voter text paste करें!");
-        return;
-    }
-    const csvOutput = smartParseVoterText(inputText);
+    if(!inputText.trim()){ alert("Raw voter text paste करें!"); return; }
+    const csvOutput = parseVoterTextToCSV(inputText);
     document.getElementById("outputCSV").value = csvOutput;
     document.getElementById("copyButton").disabled=false;
+    document.getElementById("downloadButton").disabled=false;
 });
 
 document.getElementById("copyButton").addEventListener("click",()=>{
     const output = document.getElementById("outputCSV");
     output.select();
-    output.setSelectionRange(0,99999);
     document.execCommand("copy");
     alert("CSV clipboard में copy हो गया! 📋");
+});
+
+document.getElementById("downloadButton").addEventListener("click",()=>{
+    const csvData = document.getElementById("outputCSV").value;
+    const blob = new Blob([csvData], {type:"text/csv;charset=utf-8;"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "voter_list.csv";
+    link.click();
 });
 </script>
 </body>
