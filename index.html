@@ -1,55 +1,34 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Messy Voter Data → CSV</title>
-<style>
-body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-h2 { text-align: center; color: #333; }
-textarea { width: 100%; height: 300px; padding: 10px; margin-bottom: 15px; font-size: 14px; resize: vertical; }
-.button-container { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
-button { flex: 1; padding: 12px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; color: white; transition: .3s; }
-#generateButton { background: #007bff; } #generateButton:hover { background: #0056b3; }
-#copyButton { background: #28a745; } #copyButton:hover { background: #218838; }
-#downloadButton { background: #ffc107; color: #000; } #downloadButton:hover { background: #e0a800; }
-#outputCSV { width:100%; height:300px; padding:10px; font-family: Consolas, monospace; font-size:13px; border:1px solid #ddd; box-sizing:border-box; white-space: pre-wrap; }
-</style>
+<title>Voter CSV Cleaner</title>
 </head>
 <body>
 
-<h2>Messy Voter Data → CSV 🚀</h2>
-<textarea id="inputText" placeholder="Raw messy voter text paste करें..."></textarea>
-
-<div class="button-container">
-<button id="generateButton">CSV Generate करें</button>
-<button id="copyButton" disabled>📋 Copy CSV</button>
-<button id="downloadButton" disabled>⬇️ Download CSV</button>
-</div>
-
-<h3>Generated CSV:</h3>
-<textarea id="outputCSV" readonly placeholder="CSV output यहाँ दिखेगा..."></textarea>
+<h2>Paste your messy voter data below:</h2>
+<textarea id="rawData" rows="15" cols="100" placeholder="Paste raw voter data here..."></textarea>
+<br><br>
+<button onclick="generateCSV()">Generate Clean CSV</button>
+<br><br>
+<h3>Clean CSV Output:</h3>
+<textarea id="csvOutput" rows="15" cols="100"></textarea>
+<br>
+<button onclick="copyCSV()">Copy CSV</button>
 
 <script>
-// Helper function to quote fields with comma or quotes
-function quoteCSVField(field){
-    if(!field) field = "NA";
-    field = field.toString().trim();
-    if(field.includes(",") || field.includes('"') || field.includes("\n")){
-        field = '"' + field.replace(/"/g,'""') + '"';
-    }
-    return field;
-}
+function generateCSV() {
+    const rawText = document.getElementById('rawData').value;
+    const lines = rawText.split(/\r?\n/);
 
-function generateCSVFromMessyText(text){
-    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l!=="");
     const csvRows = [];
-    const header = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
-    csvRows.push(header.join(","));
+    // CSV header
+    csvRows.push("SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender");
 
-    let currentSerial = "";
-    let currentEPIC = "";
-    let currentPart = "";
+    let serialNo = "";
+    let epicNo = "";
+    let partNo = "";
     let voterName = "";
     let relationName = "";
     let relationType = "";
@@ -57,135 +36,76 @@ function generateCSVFromMessyText(text){
     let age = "";
     let gender = "";
 
-    for(let line of lines){
-        // Check if line starts with SerialNo (number)
-        const serialMatch = line.match(/^(\d{1,4})\s*[, ]/);
-        if(serialMatch){
-            // Push previous voter if exists
-            if(currentSerial || voterName){
+    lines.forEach(line => {
+        line = line.trim();
+        if (!line) return; // skip empty lines
+
+        // SerialNo detection: line starts with a number or "NA"
+        const serialMatch = line.match(/^(\d+|NA)/);
+        if (serialMatch) {
+            // If previous voterName exists, push previous row
+            if (voterName) {
                 csvRows.push([
-                    quoteCSVField(currentSerial),
-                    quoteCSVField(currentEPIC),
-                    quoteCSVField(currentPart),
-                    quoteCSVField(voterName),
-                    quoteCSVField(relationName),
-                    quoteCSVField(relationType),
-                    quoteCSVField(houseNo),
-                    quoteCSVField(age),
-                    quoteCSVField(gender)
+                    serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType,
+                    `"${houseNo}"`, `"${age}"`, gender
                 ].join(","));
             }
-            // Reset fields
-            currentSerial = serialMatch[1];
-            currentEPIC = "";
-            currentPart = "";
+
+            // Reset variables
+            serialNo = serialMatch[1];
+            epicNo = "";
+            partNo = "";
             voterName = "";
             relationName = "";
             relationType = "";
             houseNo = "";
             age = "";
             gender = "";
+
             // Extract EPIC_NO and PartNo if present
-            const epcMatch = line.match(/(RBG\d{7,8})\s*(\d{1,3}\/\d{1,3}\/\d{1,3})?/);
-            if(epcMatch){
-                currentEPIC = epcMatch[1];
-                currentPart = epcMatch[2] || "";
+            const parts = line.split(/[\s,]+/);
+            if (parts[1] && parts[1].startsWith("RBG")) epicNo = parts[1];
+            if (parts[2]) partNo = parts[2];
+
+            // Extract remaining as voterName
+            voterName = parts.slice(3).join(" ").trim();
+
+        } else {
+            // Handle lines with data like gender, houseNo, age, relationType etc.
+            if (line.match(/Male|Female|स्त्री|पु/i)) {
+                gender = line;
+            } else if (line.match(/Husband|Father|Mother/i)) {
+                relationType = line;
+            } else if (line.match(/घर क्रमांक/i)) {
+                houseNo = line;
+            } else if (line.match(/\d+/)) {
+                age = line;
+            } else if (!voterName) {
+                voterName = line;
+            } else if (!relationName) {
+                relationName = line;
             }
-            // Try to extract voterName
-            const nameMatch = line.match(/\d{1,3}\s*(मतदाराचे पूर्ण:)?\s*(.*)/i);
-            if(nameMatch){
-                voterName = nameMatch[2].trim();
-            }
-            continue;
         }
+    });
 
-        // Lines with EPIC_NO or PartNo
-        if(line.startsWith("RBG")){
-            const parts = line.split(" ");
-            currentEPIC = parts[0].trim();
-            currentPart = parts.slice(1).join(" ").trim();
-            continue;
-        }
-
-        // Lines containing voter name
-        if(line.toLowerCase().includes("मतदाराचे पूर्ण") || line.match(/^\|/)){
-            voterName = line.replace(/.*मतदाराचे पूर्ण:?\s*/i,"").trim();
-            continue;
-        }
-
-        // Relation
-        if(line.toLowerCase().includes("आईचे नाव") || line.toLowerCase().includes("पतीचे नाव") || line.toLowerCase().includes("वडिलांचे नाव")){
-            relationName = line.split(":")[1]?.trim() || "";
-            if(line.toLowerCase().includes("आईचे नाव")) relationType="Mother";
-            else if(line.toLowerCase().includes("पतीचे नाव")) relationType="Husband";
-            else if(line.toLowerCase().includes("वडिलांचे नाव")) relationType="Father";
-            continue;
-        }
-
-        // Age
-        if(line.toLowerCase().includes("वय")){
-            age = line.replace(/वय\s*:\s*/i,"").trim();
-            continue;
-        }
-
-        // Gender
-        if(line.toLowerCase().includes("लिंग")){
-            const g = line.replace(/.*लिंग\s*:\s*/i,"").trim();
-            if(g.includes("स्त्री")) gender="Female";
-            else if(g.includes("पुरू")) gender="Male";
-            else gender = g;
-            continue;
-        }
-
-        // HouseNo
-        if(line.toLowerCase().includes("घर क्रमांक")){
-            houseNo = line.replace(/.*घर क्रमांक\s*:?/i,"").trim();
-            continue;
-        }
-    }
-
-    // Push last record
-    if(currentSerial || voterName){
+    // Push last row
+    if (voterName) {
         csvRows.push([
-            quoteCSVField(currentSerial),
-            quoteCSVField(currentEPIC),
-            quoteCSVField(currentPart),
-            quoteCSVField(voterName),
-            quoteCSVField(relationName),
-            quoteCSVField(relationType),
-            quoteCSVField(houseNo),
-            quoteCSVField(age),
-            quoteCSVField(gender)
+            serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType,
+            `"${houseNo}"`, `"${age}"`, gender
         ].join(","));
     }
 
-    return csvRows.join("\n");
+    document.getElementById('csvOutput').value = csvRows.join("\n");
 }
 
-document.getElementById("generateButton").addEventListener("click", ()=>{
-    const input = document.getElementById("inputText").value;
-    if(!input.trim()){ alert("Raw voter text paste करें!"); return; }
-    const csv = generateCSVFromMessyText(input);
-    document.getElementById("outputCSV").value = csv;
-    document.getElementById("copyButton").disabled = false;
-    document.getElementById("downloadButton").disabled = false;
-});
-
-document.getElementById("copyButton").addEventListener("click", ()=>{
-    const output = document.getElementById("outputCSV");
-    output.select();
+function copyCSV() {
+    const csvText = document.getElementById('csvOutput');
+    csvText.select();
     document.execCommand("copy");
-    alert("CSV clipboard में copy हो गया! 📋");
-});
-
-document.getElementById("downloadButton").addEventListener("click", ()=>{
-    const csvData = document.getElementById("outputCSV").value;
-    const blob = new Blob([csvData], {type:"text/csv;charset=utf-8;"});
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "voter_list.csv";
-    link.click();
-});
+    alert("CSV copied to clipboard!");
+}
 </script>
+
 </body>
 </html>
