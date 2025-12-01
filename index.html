@@ -31,7 +31,7 @@ pre { background:#eee; padding:10px; overflow-x:auto; }
 <pre id="jsonOutput"></pre>
 
 <script>
-// ===== Your Firebase Config =====
+// Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyCdjqVFKOQ1dtaXCGFUUtsJWbFdGNTo-xw",
   authDomain: "voter-25c94.firebaseapp.com",
@@ -41,11 +41,9 @@ const firebaseConfig = {
   messagingSenderId: "297773534400",
   appId: "1:297773534400:web:3722c487b8c83e9b787125"
 };
-
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ===== Parsing Logic =====
 let voters = [];
 
 function parseVoters() {
@@ -53,75 +51,89 @@ function parseVoters() {
     const lines = text.split(/\r?\n/);
     voters = [];
     let serial = 1;
-    let current = {};
+    let current = null;
 
     lines.forEach(line => {
         line = line.trim();
         if (!line) return;
 
-        // EPIC_NO & PartNo
-        const epicMatch = line.match(/RBG\d+\s+[\d/]+/);
+        // EPIC_NO + PartNo
+        const epicMatch = line.match(/RBG\d+\s*[\d\/]+/);
         if (epicMatch) {
-            if (Object.keys(current).length) voters.push(current);
-            current = { SerialNo: serial++, EPIC_NO:'', PartNo:'', VoterName:'', RelationName:'', RelationType:'', HouseNo:'', Age:'', Gender:'' };
+            if (current) voters.push(current);
             const parts = epicMatch[0].split(/\s+/);
-            current.EPIC_NO = parts[0];
-            current.PartNo = parts[1];
+            current = {
+                SerialNo: serial++,
+                EPIC_NO: parts[0] || 'NA',
+                PartNo: parts[1] || 'NA',
+                VoterName: 'NA',
+                RelationName: 'NA',
+                RelationType: 'NA',
+                HouseNo: 'NA',
+                Age: 'NA',
+                Gender: 'NA'
+            };
+            return;
         }
 
-        // VoterName
-        if (line.startsWith('| मतदाराचे पूर्ण') || line.startsWith('मतदाराचे पूर्ण')) {
-            const name = line.split(':')[1]?.trim();
-            if (name) current.VoterName = name;
+        // Voter Name
+        if (line.includes('मतदाराचे पूर्ण') || line.includes('नांव')) {
+            const name = line.split(':')[1]?.trim() || line.replace(/.*नांव/, '').trim();
+            if (name) current.VoterName = name || 'NA';
+            return;
         }
 
-        // RelationName
-        if (line.startsWith('| पतीचे नाव') || line.startsWith('पतीचे नाव')) {
+        // Relation Name
+        if (line.includes('पतीचे नाव')) {
             const name = line.split(':')[1]?.trim();
             if (name) {
                 current.RelationName = name;
                 current.RelationType = 'Husband';
             }
+            return;
         }
-        if (line.startsWith('| वडिलांचे नाव') || line.startsWith('वडिलांचे नाव')) {
+        if (line.includes('वडिलांचे नाव')) {
             const name = line.split(':')[1]?.trim();
             if (name) {
                 current.RelationName = name;
                 current.RelationType = 'Father';
             }
+            return;
         }
 
-        // HouseNo
-        if (line.startsWith('| घर क्रमांक') || line.startsWith('घर क्रमांक')) {
+        // House Number
+        if (line.includes('घर क्रमांक')) {
             const house = line.split(':')[1]?.trim();
             if (house) current.HouseNo = house;
+            return;
         }
 
         // Age
-        if (line.startsWith('| वय') || line.startsWith('वय')) {
+        if (line.includes('वय')) {
             const age = line.split(':')[1]?.trim();
             if (age) current.Age = age;
+            return;
         }
 
         // Gender
-        if (line.startsWith('| लिंग') || line.startsWith('लिंग')) {
+        if (line.includes('लिंग')) {
             const g = line.split(':')[1]?.trim();
-            if (g) current.Gender = (g==='पु')?'Male':(g==='स्त्री'?'Female':'');
+            if (g) current.Gender = (g==='पु')?'Male':(g==='स्त्री'?'Female':'NA');
+            return;
         }
     });
 
-    if (Object.keys(current).length) voters.push(current);
+    if (current) voters.push(current);
 
-    // Display CSV
+    // CSV Output
     const csvHeader = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
     const csvRows = voters.map(v => `${v.SerialNo},${v.EPIC_NO},${v.PartNo},"${v.VoterName}","${v.RelationName}",${v.RelationType},${v.HouseNo},${v.Age},${v.Gender}`);
     document.getElementById('csvOutput').textContent = [csvHeader, ...csvRows].join('\n');
 
-    // Display JSON
+    // JSON Output
     document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
 }
 
-// ===== Download Functions =====
 function downloadCSV() {
     const csvContent = document.getElementById('csvOutput').textContent;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -140,7 +152,6 @@ function downloadJSON() {
     link.click();
 }
 
-// ===== Firebase Push =====
 function pushFirebase() {
     voters.forEach(v => {
         const newRef = db.ref('voters').push();
@@ -149,6 +160,5 @@ function pushFirebase() {
     alert('Voters uploaded to Firebase!');
 }
 </script>
-
 </body>
 </html>
