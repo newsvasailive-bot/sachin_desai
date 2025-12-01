@@ -3,37 +3,57 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter List Parser & Firebase</title>
+<title>Voter List Parser & Firebase Uploader</title>
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-database-compat.js"></script>
 <style>
-body { font-family: Arial; padding:20px; background:#f9f9f9; }
-textarea { width:100%; height:200px; margin-bottom:10px; }
-button { padding:10px 20px; margin:5px; cursor:pointer; }
-pre { background:#eee; padding:10px; overflow-x:auto; white-space: pre-wrap; }
+body { font-family: Arial, sans-serif; padding:20px; background:#f9f9f9; }
+textarea { width:100%; height:200px; margin-bottom:10px; border: 1px solid #ccc; padding: 10px; box-sizing: border-box; }
+button { padding:10px 20px; margin:5px 5px 5px 0; cursor:pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; transition: background-color 0.3s; }
+button:hover { background-color: #0056b3; }
+pre { background:#eee; padding:10px; overflow-x:auto; white-space: pre-wrap; border: 1px solid #ddd; border-radius: 4px; }
+h2, h3 { color: #333; }
+.warning { color: red; font-weight: bold; margin-top: 15px; border: 1px solid red; padding: 10px; background: #ffebeb; border-radius: 4px; }
 </style>
 </head>
 <body>
 
-<h2>Voter List Parser & Firebase Upload</h2>
+<h2>🗳️ वोटर लिस्ट पार्सर और फायरबेस अपलोड</h2>
 
-<textarea id="voterText" placeholder="Raw voter text paste here..."></textarea>
+<p>कच्चा (Raw) वोटर लिस्ट टेक्स्ट यहाँ पेस्ट करें:</p>
+<textarea id="voterText" placeholder="उदाहरण: 
+...
+RBG1234567 15/234
+मतदाराचे पूर्ण नांव : रमेश सुरेश पाटिल Available Photo
+वडिलांचे नाव : सुरेश बाबुराव पाटिल
+घर क्रमांक : 15
+वय : 45
+लिंग : पु
+..."></textarea>
 <br>
-<button onclick="parseVoters()">Parse to CSV & JSON</button>
-<button onclick="downloadCSV()">Download CSV</button>
-<button onclick="downloadJSON()">Download JSON</button>
-<button onclick="pushFirebase()">Send to Firebase</button>
+
+<button onclick="parseVoters()">1. Parse to CSV & JSON</button>
+<button onclick="downloadCSV()">2. Download CSV</button>
+<button onclick="downloadJSON()">3. Download JSON</button>
+<button onclick="pushFirebase()">4. Send to Firebase</button>
+
+<div class="warning">
+    🛑 **ज़रूरी चेतावनी:** बटन 4 (`Send to Firebase`) तभी काम करेगा जब आप नीचे दिए गए `firebaseConfig` ऑब्जेक्ट को अपने **असली फायरबेस डेटा** से बदलेंगे।
+</div>
 
 <h3>CSV Output:</h3>
-<pre id="csvOutput"></pre>
+<pre id="csvOutput">CSV डेटा यहाँ दिखाई देगा...</pre>
 
 <h3>JSON Output:</h3>
-<pre id="jsonOutput"></pre>
+<pre id="jsonOutput">JSON डेटा यहाँ दिखाई देगा...</pre>
 
 <script>
-// ===== Firebase Config =====
+// =================================================================
+// ===== 🛑 FIREBASE CONFIGURATION (CHANGE THIS!) 🛑 =====
+// =================================================================
+// इन डमी वैल्यू को Firebase Console से प्राप्त अपने असली KEYS से बदलें।
 const firebaseConfig = {
-  apiKey: "AIzaSyCdjqVFKOQ1dtaXCGFUUtsJWbFdGNTo-xw",
+  apiKey: "AIzaSyCdjqVFKOQ1dtaXCGFUUtsJWbFdGNTo-xw", 
   authDomain: "voter-25c94.firebaseapp.com",
   databaseURL: "https://voter-25c94-default-rtdb.firebaseio.com",
   projectId: "voter-25c94",
@@ -47,11 +67,21 @@ const db = firebase.database();
 // ===== Parsing Logic =====
 let voters = [];
 
+/**
+ * पाठ से अनावश्यक शब्द और फॉर्मेटिंग हटाता है।
+ */
 function cleanText(str) {
     if(!str) return '';
-    return str.replace(/(नांव|Available|Photo)/g,'').replace(/\r?\n/g,' ').trim();
+    // REGEX को और मजबूत किया गया
+    return str.replace(/(नांव|Available|Photo|मतदाराचे|उपलब्ध|पूर्ण|पतीचे|वडिलांचे|:\s*)$/gi,'')
+              .replace(/\r?\n/g,' ')
+              .trim()
+              .replace(/^\s*:\s*/, ''); // यदि शुरू में ':' है तो हटा दें
 }
 
+/**
+ * कच्चे पाठ को पार्स करता है और CSV/JSON में आउटपुट करता है।
+ */
 function parseVoters() {
     const text = document.getElementById('voterText').value;
     const lines = text.split(/\r?\n/);
@@ -63,15 +93,16 @@ function parseVoters() {
         line = line.trim();
         if(!line) return;
 
-        // EPIC_NO & PartNo
-        const epicMatch = line.match(/RBG\d+\s+[\d\/]+/);
+        // EPIC_NO & PartNo: नए मतदाता रिकॉर्ड की शुरुआत।
+        // EPIC नंबर और Part Number (digits/digits) को मैच करता है।
+        const epicMatch = line.match(/([A-Z0-9]{3,})\s+([\d\/]+)/); 
         if(epicMatch) {
+            // पिछले रिकॉर्ड को पुश करें
             if(Object.keys(current).length) voters.push(current);
-            const parts = epicMatch[0].split(/\s+/);
             current = {
                 SerialNo: serial++,
-                EPIC_NO: parts[0],
-                PartNo: parts[1] || '',
+                EPIC_NO: epicMatch[1], 
+                PartNo: epicMatch[2] || '', 
                 VoterName: '',
                 RelationName: '',
                 RelationType: '',
@@ -81,50 +112,46 @@ function parseVoters() {
             };
         }
 
-        // VoterName
-        if(line.startsWith('| मतदाराचे पूर्ण') || line.startsWith('मतदाराचे पूर्ण')) {
-            const name = cleanText(line.split(':')[1]);
-            if(name) current.VoterName = name;
+        // --- FIXED/ROBUST FIELD EXTRACTION USING REGEX ---
+        
+        // VoterName (मतदाराचे पूर्ण)
+        const nameMatch = line.match(/(?:\|?\s*(?:मतदाराचे पूर्ण|Voter's Full)\s*नांव?\s*:\s*)(.*)/i);
+        if (nameMatch && nameMatch[1]) {
+            current.VoterName = cleanText(nameMatch[1]);
         }
 
-        // Relation
-        if(line.startsWith('| पतीचे नाव') || line.startsWith('पतीचे नाव')) {
-            const name = cleanText(line.split(':')[1]);
-            if(name) {
-                current.RelationName = name;
-                current.RelationType = 'Husband';
-            }
-        }
-        if(line.startsWith('| वडिलांचे नाव') || line.startsWith('वडिलांचे नाव')) {
-            const name = cleanText(line.split(':')[1]);
-            if(name) {
-                current.RelationName = name;
-                current.RelationType = 'Father';
-            }
+        // Relation (पतीचे/वडिलांचे नाव)
+        const relationMatch = line.match(/(?:\|?\s*(पतीचे|वडिलांचे)\s*नाव\s*:\s*)(.*)/i);
+        if (relationMatch && relationMatch[2]) {
+            current.RelationName = cleanText(relationMatch[2]);
+            current.RelationType = (relationMatch[1] === 'पतीचे') ? 'Husband' : 'Father';
         }
 
-        // HouseNo
-        if(line.startsWith('| घर क्रमांक') || line.startsWith('घर क्रमांक')) {
-            const house = cleanText(line.split(':')[1]);
-            if(house) current.HouseNo = house;
+        // HouseNo (घर क्रमांक)
+        const houseMatch = line.match(/(?:\|?\s*घर क्रमांक\s*:\s*)(.*)/i);
+        if (houseMatch && houseMatch[1]) {
+            current.HouseNo = cleanText(houseMatch[1]);
+        }
+        
+        // Age (वय)
+        const ageMatch = line.match(/वय\s*:\s*(\d+)/);
+        if(ageMatch) {
+            current.Age = ageMatch[1];
         }
 
-        // Age
-        if(line.startsWith('| वय') || line.startsWith('वय')) {
-            const ageMatch = line.match(/\d+/);
-            if(ageMatch) current.Age = ageMatch[0];
-        }
-
-        // Gender
-        if(line.startsWith('| लिंग') || line.startsWith('लिंग')) {
-            const g = line.split(':')[1]?.trim();
-            if(g) current.Gender = (g.startsWith('पु'))?'Male':(g.startsWith('स्त्री')?'Female':'');
+        // Gender (लिंग)
+        const genderMatch = line.match(/लिंग\s*:\s*(पु|स्त्री|Male|Female)/i);
+        if(genderMatch) {
+            const g = genderMatch[1].trim();
+            if(g.startsWith('पु') || g.startsWith('Ma')) current.Gender = 'Male';
+            else if(g.startsWith('स्त्री') || g.startsWith('Fe')) current.Gender = 'Female';
         }
     });
 
+    // अंतिम रिकॉर्ड को पुश करें
     if(Object.keys(current).length) voters.push(current);
 
-    // ===== CSV =====
+    // ===== CSV Output Generation =====
     const escapeCSV = str => `"${String(str || '').replace(/"/g,'""').replace(/\n/g,' ').replace(/\r/g,' ')}"`;
     const csvHeader = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
     const csvRows = voters.map(v => [
@@ -134,13 +161,17 @@ function parseVoters() {
     ].join(','));
     document.getElementById('csvOutput').textContent = [csvHeader, ...csvRows].join('\n');
 
-    // ===== JSON =====
+    // ===== JSON Output Generation =====
     document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
 }
 
 // ===== Download Functions =====
 function downloadCSV() {
     const csvContent = document.getElementById('csvOutput').textContent;
+    if (!csvContent || csvContent.includes('CSV डेटा यहाँ दिखाई देगा')) {
+        alert("पहले 'Parse to CSV & JSON' बटन दबाकर डेटा को Parse करें।");
+        return;
+    }
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -150,6 +181,10 @@ function downloadCSV() {
 
 function downloadJSON() {
     const jsonContent = document.getElementById('jsonOutput').textContent;
+    if (!jsonContent || jsonContent.includes('JSON डेटा यहाँ दिखाई देगा')) {
+        alert("पहले 'Parse to CSV & JSON' बटन दबाकर डेटा को Parse करें।");
+        return;
+    }
     const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -159,18 +194,46 @@ function downloadJSON() {
 
 // ===== Firebase Push =====
 function pushFirebase() {
+    if (voters.length === 0 || !document.getElementById('jsonOutput').textContent.includes('[')) {
+        alert("पहले 'Parse to CSV & JSON' बटन दबाकर डेटा को Parse करें।");
+        return;
+    }
+    
     let success = 0, fail = 0;
+    
+    // सभी Firebase अपलोड प्रॉमिसेस को स्टोर करने के लिए एक ऐरे
+    const pushPromises = [];
+
     voters.forEach(v => {
+        if (!v.EPIC_NO || !v.PartNo) {
+            console.warn('Skipping record due to missing EPIC_NO or PartNo:', v);
+            fail++;
+            return;
+        }
+        
         try {
-            const key = v.EPIC_NO + '_' + v.PartNo; // unique key
-            db.ref('voters/' + key).set(v);
-            success++;
+            // Unique Key for Firebase (Forward slash / is replaced with - for path safety)
+            const key = v.EPIC_NO + '_' + v.PartNo.replace(/\//g, '-'); 
+            
+            // Promise को ऐरे में जोड़ें
+            const promise = db.ref('voters/' + key).set(v)
+                .then(() => success++)
+                .catch(e => {
+                    fail++;
+                    console.error('Firebase Error for key ' + key + ':', e);
+                });
+            pushPromises.push(promise);
+            
         } catch(e) {
             fail++;
-            console.error('Firebase Error:', e);
+            console.error('Local Push Error:', e);
         }
     });
-    alert(`Voters uploaded! Success: ${success}, Fail: ${fail}`);
+
+    // सभी अपलोड प्रॉमिसेस के खत्म होने का इंतजार करें
+    Promise.allSettled(pushPromises).then(() => {
+        alert(`वोटर अपलोड पूरा हुआ! Success attempts: ${success}, Failed records: ${fail}`);
+    });
 }
 </script>
 </body>
