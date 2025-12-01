@@ -1,325 +1,137 @@
-<!doctype html>
-<html lang="hi">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Voter List → CSV Extractor</title>
+<meta charset="UTF-8">
+<title>Voter List Auto Extractor</title>
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:18px;background:#f7f9fc;color:#111}
-  h1{font-size:20px;margin:0 0 10px}
-  .wrap{max-width:1000px;margin:0 auto}
-  textarea{width:100%;height:260px;padding:10px;font-size:14px;box-sizing:border-box;}
-  button{padding:10px 14px;margin-right:8px;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer}
-  button.secondary{background:#0ea5a4}
-  .controls{margin:10px 0}
-  table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff}
-  th,td{border:1px solid #e6e9ef;padding:6px 8px;text-align:left;font-size:13px}
-  th{background:#eef2ff}
-  .muted{color:#666;font-size:13px}
-  .notice{background:#fff3cd;border:1px solid #ffeeba;padding:10px;margin:10px 0;border-radius:6px}
-  .small{font-size:13px;color:#444}
-  .limit{color:#b91c1c;font-weight:600}
+body { font-family: Arial; padding: 20px; background: #f7f7f7; }
+textarea { width: 100%; height: 250px; padding: 10px; font-size: 15px; }
+button { padding: 10px 20px; margin: 10px 0; font-size: 16px; cursor: pointer; }
+table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+th, td { border: 1px solid #999; padding: 6px; font-size: 14px; }
+th { background: #333; color: #fff; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Voter List → CSV Extractor (Marathi/Hindi)</h1>
-  <p class="small">PDF से निकला multi-line raw text यहाँ paste करें। यह tool first 100 parsed records तक CSV बनाएगा।</p>
 
-  <textarea id="raw" placeholder="यहाँ PDF से निकला पूरा raw text paste करें (multi-line)"></textarea>
+<h2>🗳 Voter List Auto Extractor (Age Fix Included)</h2>
 
-  <div class="controls">
-    <button id="parseBtn">Parse & Preview</button>
-    <button id="downloadBtn" class="secondary" disabled>Download CSV</button>
-    <label class="muted" style="margin-left:12px">Parsed: <span id="count">0</span> rows</label>
-  </div>
+<textarea id="raw" placeholder="Yahan voter list ka raw text paste kare (100 ek saath)"></textarea>
+<br>
+<button onclick="extract()">Extract Voters</button>
+<button onclick="downloadCSV()">Download CSV</button>
 
-  <div id="previewArea"></div>
-
-  <div style="margin-top:12px" class="muted">
-    <div>Output header order (CSV): <strong>SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender</strong></div>
-    <div style="margin-top:6px" class="notice small">
-      टिप: यह parser labels (मतदाराचे पूर्ण, वडिलांचे नाव, पतीचे नाव, घर क्रमांक, वय, लिंग, और EPIC/PartNo) को ढूँढकर record बनाता है। अगर किसी रिकॉर्ड में label missing है तो कुछ fields blank आ सकती हैं — preview में बदलें और फिर डाउनलोड करें।
-    </div>
-  </div>
-</div>
+<table id="output"></table>
 
 <script>
-(function(){
-  // helper: trim and remove unicode zero-width etc.
-  function cleanLine(s){ return (s||'').replace(/[\u200B-\u200D\uFEFF]/g,'').trim(); }
+function convertMarathiNum(str) {
+    const map = { '०':0,'१':1,'२':2,'३':3,'४':4,'५':5,'६':6,'७':7,'८':8,'९':9 };
+    return str.replace(/[०-९]/g, d => map[d]);
+}
 
-  function parseRawToRecords(raw, maxRecords=100){
-    if(!raw) return [];
-    const lines = raw.split(/\r?\n/).map(cleanLine).filter(l => l.length>0);
+function extract() {
+    let raw = document.getElementById("raw").value;
 
-    const records = [];
-    let current = makeEmpty();
+    let lines = raw.split("\n");
+    let data = [];
 
-    function pushIfValidAndReset(){
-      // treat as valid if EPIC present or name present or serial present
-      if(current.epic || current.name || current.serial){
-        records.push(Object.assign({}, current));
-      }
-      current = makeEmpty();
-    }
+    let serial = "";
+    let epic = "";
+    let part = "";
+    let name = "";
+    let relName = "";
+    let relType = "";
+    let house = "";
+    let age = "";
+    let gender = "";
 
-    function makeEmpty(){ return {serial:'', epic:'', part:'', name:'', relation:'', type:'', house:'', age:'', gender:''}; }
+    const table = document.getElementById("output");
+    table.innerHTML = `
+        <tr>
+            <th>SerialNo</th><th>EPIC_NO</th><th>PartNo</th><th>VoterName</th>
+            <th>RelationName</th><th>RelationType</th><th>HouseNo</th>
+            <th>Age</th><th>Gender</th>
+        </tr>
+    `;
 
-    for(let i=0;i<lines.length;i++){
-      const line = lines[i];
+    lines.forEach(line => {
+        line = line.trim();
 
-      // If line is a plain serial number (e.g., "511")
-      if(/^\d{1,5}$/.test(line)){
-        // if current has something (epic or name), push it as complete record
-        if(current.epic || current.name || current.serial){
-          pushIfValidAndReset();
+        // SERIAL + EPIC + PART
+        if (/^\d+$/.test(line)) serial = line;
+
+        if (/^[A-Z]{3}\d+/.test(line)) {
+            let p = line.split(" ");
+            epic = p[0];
+            part = p[1] || "";
         }
-        current.serial = line;
-        continue;
-      }
 
-      // If line contains EPIC and PartNo on same line e.g. "RBG5638457 131/272/527"
-      const epicPartMatch = line.match(/((?:RBG|MRL)[A-Z0-9]{5,})\s+(\d{1,4}\/\d{1,4}\/\d{1,4})/i);
-      if(epicPartMatch){
-        current.epic = epicPartMatch[1].trim();
-        current.part = epicPartMatch[2].trim();
-        continue;
-      }
-      // If line looks like EPIC only (rare)
-      const epicOnly = line.match(/^(RBG|MRL)[A-Z0-9]{5,}$/i);
-      if(epicOnly){
-        current.epic = line.trim();
-        continue;
-      }
-      // If line looks like PartNo only
-      const partOnly = line.match(/^\d{1,4}\/\d{1,4}\/\d{1,4}$/);
-      if(partOnly){
-        current.part = line.trim();
-        continue;
-      }
-
-      // NAME lines - prefer explicit label "मतदाराचे पूर्ण" or "मतदाराचे पूर्ण:" or lines that start with "| मतदाराचे पूर्ण"
-      if(/मतदाराचे पूर्ण[:\s]*|^\|\s*मतदाराचे पूर्ण[:\s]*/i.test(line) || /^मतदाराचे पूर्ण\s*/i.test(line) ){
-        const name = line.replace(/.*मतदाराचे पूर्ण[:\s]*/i,'').trim();
-        if(name) {
-          // If there is already a name, push previous and start new (some PDFs list multiple names under same serial)
-          if(current.name || current.epic){
-            // if current already has epic/part but no name, this name belongs to current.
-            // if current has name and epic too, assume next person — push current, start new record with same serial if next lines include EPIC etc.
-            if(current.name && current.epic){
-              pushIfValidAndReset();
-              current.serial = current.serial || '';
-            }
-          }
-          current.name = name;
+        // NAME
+        if (line.includes("मतदाराचे पूर्ण") || line.includes("नांव")) {
+            name = line.replace(/.*:\s*/, "").trim();
         }
-        continue;
-      }
 
-      // Generic "नांव" lines: sometimes next line or previous line contains actual name. Try to pick next non-label line as name.
-      if(/^\|?\s*नांव$/i.test(line)){
-        // look ahead for next meaningful line
-        let next = '';
-        for(let j=i+1;j<lines.length && !next;j++){
-          const cand = lines[j];
-          if(!/^(Photo|Photo Available|Available|नांव|\||वडिलांचे नाव|पतीचे नाव|घर क्रमांक|वय|लिंग|\d{1,4}|(RBG|MRL))/i.test(cand)){
-            next = cand; break;
-          }
+        // RELATION
+        if (line.includes("वडिलांचे नाव")) {
+            relType = "Father";
+            relName = line.replace(/.*:\s*/, "");
         }
-        if(next){
-          current.name = next;
-          // skip ahead pointer i? don't advance here; next loop will see that line but it's okay
+        if (line.includes("पतीचे नाव")) {
+            relType = "Husband";
+            relName = line.replace(/.*:\s*/, "");
         }
-        continue;
-      }
 
-      // Father / Husband / Relation
-      if(/वडिलांचे नाव\s*:|वडिलांचे नाव|पतीचे नाव\s*:|पतीचे नाव/i.test(line)){
-        // remove labels and separators
-        let rel = line.replace(/.*(वडिलांचे नाव|पतीचे नाव)\s*:*/i,'').replace(/\|/g,'').trim();
-        if(!rel){
-          // sometimes name is on next line
-          const cand = lines[i+1];
-          if(cand && !/^(Photo|Photo Available|Available|नांव|\||घर क्रमांक|वय|लिंग|\d{1,4}|(RBG|MRL))/i.test(cand)){
-            rel = cand;
-          }
+        // HOUSE
+        if (line.includes("घर क्रमांक")) {
+            house = line.replace(/.*:\s*/, "").trim();
         }
-        current.relation = rel;
-        current.type = /पती/i.test(line) ? 'Husband' : 'Father';
-        continue;
-      }
 
-      // Special case where relation label and name split across lines like "पतीचे नाव" next line ": यादव ..." or ":" on next
-      if(/^(पतीचे नाव|वडिलांचे नाव)\s*$/i.test(line) && lines[i+1]){
-        const nxt = lines[i+1].replace(/^[:\s]*/,'').trim();
-        if(nxt && !/^(Photo|Photo Available|Available|नांव|\||घर क्रमांक|वय|लिंग|\d{1,4}|(RBG|MRL))/i.test(nxt)){
-          current.relation = nxt;
-          current.type = /पतीचे/i.test(line) ? 'Husband' : 'Father';
-          i++; // consume next
+        // AGE
+        if (line.includes("वय")) {
+            let a = line.replace(/.*:\s*/, "").trim();
+            age = convertMarathiNum(a);
         }
-        continue;
-      }
 
-      // House number
-      if(/घर\s*क्रमांक\s*:|घर क्रमांक|घर क्रमांक\s*:*/i.test(line)){
-        let hn = line.replace(/.*घर\s*क्रमांक\s*:*/i,'').trim();
-        if(!hn){
-          // maybe next line contains house text
-          const nxt = lines[i+1];
-          if(nxt && !/^(Photo|Photo Available|Available|नांव|\||वडिलांचे नाव|पतीचे नाव|वय|लिंग|\d{1,4}|(RBG|MRL))/i.test(nxt)){
-            hn = nxt; i++;
-          }
+        // GENDER
+        if (line.includes("लिंग")) {
+            if (line.includes("पु")) gender = "Male";
+            else if (line.includes("स्त्री")) gender = "Female";
+
+            // Record Completed → Push Row
+            data.push([serial, epic, part, name, relName, relType, house, age, gender]);
+
+            // Clear for next voter
+            serial = epic = part = name = relName = relType = house = age = gender = "";
         }
-        current.house = hn;
-        continue;
-      }
+    });
 
-      // Age
-      if(/वय\s*:|वय\s*/i.test(line) && /\d+/.test(line)){
-        const ageMatch = line.match(/(\d{1,3})/);
-        if(ageMatch) current.age = ageMatch[1];
-        continue;
-      }
+    // Fill Table
+    data.forEach(r => {
+        let row = "<tr>";
+        r.forEach(c => row += `<td>${c}</td>`);
+        row += "</tr>";
+        table.innerHTML += row;
+    });
+}
 
-      // Gender
-      if(/लिंग\s*:|लिंग\s*/i.test(line)){
-        if(/स्त्री/i.test(line)) current.gender = 'Female';
-        else if(/पु/i.test(line) || /पुरुष/i.test(line)) current.gender = 'Male';
-        continue;
-      }
+// DOWNLOAD CSV
+function downloadCSV() {
+    let csv = "SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender\n";
+    document.querySelectorAll("#output tr").forEach((tr, i) => {
+        if (i === 0) return;
+        let cols = tr.querySelectorAll("td");
+        let row = [];
+        cols.forEach(td => row.push(td.innerText));
+        csv += row.join(",") + "\n";
+    });
 
-      // Sometimes PDFs have lines like "Photo Available" or just "Available" - ignore
-      if(/Photo|Photo Available|Available/i.test(line)){
-        continue;
-      }
-
-      // If none matched, sometimes an unlabeled name appears - try heuristic:
-      // If current.name empty and line contains Devanagari letters and not other labels, treat as potential name.
-      if(!current.name && /[\u0900-\u097F]/.test(line) && !/रिजेक्ट|Photo|वडिल|पती|घर|वय|लिंग|RBG|MRL/i.test(line)){
-        // If looks like short phrase (<=5 words), treat as name
-        const words = line.split(/\s+/).filter(Boolean);
-        if(words.length<=6){
-          current.name = line;
-          continue;
-        }
-      }
-
-      // If we hit a new EPIC line lacking serial, and current has some content, push current and start new
-      if(/^(RBG|MRL)/i.test(line) && (current.epic || current.name || current.serial)){
-        if(current.epic || current.name) pushIfValidAndReset();
-        // parse epic/part for this line after reset
-        const m = line.match(/((?:RBG|MRL)[A-Z0-9]{5,})\s+(\d{1,4}\/\d{1,4}\/\d{1,4})/i);
-        if(m){ current.epic = m[1]; current.part = m[2]; }
-        continue;
-      }
-
-      // otherwise ignore line
-    } // loop lines
-
-    // push last
-    if(current.epic || current.name || current.serial) pushIfValidAndReset();
-
-    // limit to maxRecords
-    return records.slice(0, maxRecords);
-  }
-
-  function recordsToCSV(records){
-    const header = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
-    const rows = [header];
-    for(const r of records){
-      const row = [
-        r.serial||"",
-        r.epic||"",
-        r.part||"",
-        r.name||"",
-        r.relation||"",
-        r.type||"",
-        r.house||"",
-        r.age||"",
-        r.gender||""
-      ];
-      rows.push(row.map(csvEscape));
-    }
-    return rows.map(r => r.join(",")).join("\r\n");
-  }
-
-  function csvEscape(s){
-    if(s==null) return "";
-    const str = String(s).replace(/\r?\n/g,' ').trim();
-    // if contains comma or quote or newline wrap in quotes and escape quotes
-    if(/[",\n]/.test(str)){
-      return '"' + str.replace(/"/g,'""') + '"';
-    }
-    return str;
-  }
-
-  // UI wiring
-  const parseBtn = document.getElementById('parseBtn');
-  const downloadBtn = document.getElementById('downloadBtn');
-  const rawEl = document.getElementById('raw');
-  const previewArea = document.getElementById('previewArea');
-  const countEl = document.getElementById('count');
-
-  let lastRecords = [];
-
-  parseBtn.addEventListener('click', function(){
-    const raw = rawEl.value;
-    lastRecords = parseRawToRecords(raw, 100);
-    countEl.textContent = lastRecords.length;
-    renderPreview(lastRecords);
-    downloadBtn.disabled = lastRecords.length===0;
-  });
-
-  downloadBtn.addEventListener('click', function(){
-    if(!lastRecords || lastRecords.length===0) return alert("No parsed records to download.");
-    const csv = recordsToCSV(lastRecords);
-    // create blob with BOM for Excel/UTF-8
-    const bom = new Uint8Array([0xEF,0xBB,0xBF]);
-    const blob = new Blob([bom, csv], {type: 'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const now = new Date();
-    const fname = 'voter_list_' + now.toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
-    a.download = fname;
-    document.body.appendChild(a);
+    let blob = new Blob([csv], { type: "text/csv" });
+    let a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "voter_list.csv";
     a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  });
-
-  function renderPreview(records){
-    if(!records || records.length===0){
-      previewArea.innerHTML = '<p class="muted">No records parsed yet.</p>'; return;
-    }
-    let html = '<table><thead><tr>';
-    const heads = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
-    for(const h of heads) html += '<th>' + h + '</th>';
-    html += '</tr></thead><tbody>';
-    for(const r of records){
-      html += '<tr>';
-      html += `<td>${escapeHtml(r.serial||'')}</td>`;
-      html += `<td>${escapeHtml(r.epic||'')}</td>`;
-      html += `<td>${escapeHtml(r.part||'')}</td>`;
-      html += `<td>${escapeHtml(r.name||'')}</td>`;
-      html += `<td>${escapeHtml(r.relation||'')}</td>`;
-      html += `<td>${escapeHtml(r.type||'')}</td>`;
-      html += `<td>${escapeHtml(r.house||'')}</td>`;
-      html += `<td>${escapeHtml(r.age||'')}</td>`;
-      html += `<td>${escapeHtml(r.gender||'')}</td>`;
-      html += '</tr>';
-    }
-    html += '</tbody></table>';
-    previewArea.innerHTML = html;
-  }
-
-  function escapeHtml(s){
-    if(!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-})();
+}
 </script>
+
 </body>
 </html>
