@@ -1,41 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="hi">
 <head>
-<meta charset="UTF-8">
-<title>Voter Parser</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voter Text → JSON / CSV → Firebase</title>
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-database-compat.js"></script>
-
 <style>
-body { font-family: Arial; padding:20px; background:#f9f9f9; }
-textarea { width:100%; height:200px; margin-bottom:10px; }
-pre { background:#eee; padding:10px; white-space:pre-wrap; }
-button { padding:10px 15px; margin:5px; }
+  body{font-family:Arial, Helvetica, sans-serif; padding:18px; background:#f7f7f8;}
+  h1{font-size:20px}
+  textarea{width:100%;height:260px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box}
+  button{padding:10px 14px;margin:6px 6px 6px 0;cursor:pointer}
+  pre{background:#fff;padding:10px;border:1px solid #ddd;max-height:300px;overflow:auto;white-space:pre-wrap}
+  .status{margin-top:8px}
 </style>
 </head>
 <body>
+<h1>Voter Text → JSON & CSV → Firebase</h1>
 
-<h2>Voter List Parser</h2>
-
-<textarea id="voterText" placeholder="Paste raw text..."></textarea>
+<textarea id="raw" placeholder="यहाँ PDF से निकला raw voter text paste करें..."></textarea>
 <br>
-<button onclick="parseVoters()">Parse</button>
+<button id="btnParse">Parse → Preview</button>
+<button id="btnCSV">Download CSV</button>
+<button id="btnJSON">Download JSON</button>
+<button id="btnUpload">Upload to Firebase</button>
 
-<pre id="jsonOutput"></pre>
+<div class="status" id="status"></div>
+
+<h3>CSV Preview</h3>
+<pre id="csvPreview"></pre>
+
+<h3>JSON Preview</h3>
+<pre id="jsonPreview"></pre>
 
 <script>
-// ----------------- CLEANER -----------------
-function clean(str) {
-    if (!str) return "";
-    return str
-        .replace(/Available/gi, "")
-        .replace(/Photo/gi, "")
-        .replace(/नांव/gi, "")
-        .replace(/\|/g, "")
-        .trim();
-}
-
-// ----------------- FIREBASE -----------------
+// ---------------- Firebase config - आपके config के साथ बदलें अगर ज़रूरी हो ----------------
 const firebaseConfig = {
   apiKey: "AIzaSyCdjqVFKOQ1dtaXCGFUUtsJWbFdGNTo-xw",
   authDomain: "voter-25c94.firebaseapp.com",
@@ -48,104 +47,375 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ----------------- PARSER -----------------
-let voters = [];
+// ---------------- Helper utilities ----------------
+const HINDI_DIGITS = '०१२३४५६७८९';
+function hindiToEnglishDigits(s){
+  if(!s) return s;
+  return s.replace(/[०-९]/g, ch => String(HINDI_DIGITS.indexOf(ch)));
+}
 
-function parseVoters() {
+function cleanLineRaw(s){
+  if(!s) return '';
+  // remove unwanted markers; keep important words
+  return s.replace(/\u00A0/g,' ') // non-break space
+          .replace(/Photo/gi,'')
+          .replace(/Available/gi,'')
+          .replace(/नांव/gi,'')
+          .replace(/\|/g,'')
+          .replace(/\s+/g,' ')
+          .trim();
+}
 
-    const text = document.getElementById("voterText").value;
-    const lines = text.split(/\r?\n/);
+// returns EPIC (RBG...), and part (d/d/d) if found; also handles glued like RBG5764923131/272/595
+function extractEpicAndPart(s){
+  if(!s) return null;
+  // remove stray punctuation
+  let t = s.replace(/[:,]/g,' ');
+  // try pattern RBG\d+(?:\D+(\d+\/\d+\/\d+))?
+  let m = t.match(/(RBG[0-9A-Za-z]{5,})[\s\-_:]*((\d{1,4}\/\d{1,4}\/\d{1,4}))/);
+  if(m){
+    return {epic: m[1], part: m[2]};
+  }
+  // if glued like RBG5764923131/272/595
+  m = t.match(/(RBG[0-9A-Za-z]{5,})(\d+\/\d+\/\d+)/);
+  if(m){
+    return {epic: m[1], part: m[2]};
+  }
+  // separate EPIC and part separated by space
+  m = t.match(/(RBG[0-9A-Za-z]{5,})/);
+  let p = t.match(/(\d{1,4}\/\d{1,4}\/\d{1,4})/);
+  if(m && p) return {epic: m[1], part: p[1]};
+  if(m) return {epic: m[1], part: null};
+  return null;
+}
 
-    voters = [];
-    let current = {};
-    let serial = 1;
+function escapeCSVField(s){
+  if(s === null || s === undefined) return '""';
+  s = String(s).replace(/"/g,'""').replace(/\r?\n/g,' ');
+  return `"${s}"`;
+}
 
-    lines.forEach(line => {
+// detect label lines like "पतीचे नाव" that might be alone on a line or with ': value'
+function labelIs(line, labelKeywords){
+  if(!line) return false;
+  const low = line.toLowerCase();
+  return labelKeywords.some(k => low.startsWith(k));
+}
 
-        line = clean(line);
-        if (!line) return;
+// ---------------- Parsing algorithm (robust) ----------------
+function parseVoterText(rawText){
+  const lines0 = rawText.split(/\r?\n/).map(l => l.replace(/\u00A0/g,' ').trim());
+  // Normalize and condense lines: turn multiple blank lines into no-op
+  const lines = lines0.map(cleanLineRaw).filter(l => l !== '');
 
-        // -------- EPIC + PART ----------
-        const epic = line.match(/RBG\d+/);
-        const part = line.match(/\d{1,3}\/\d{1,3}\/\d{1,4}/);
+  const voters = [];
+  let current = null;
 
-        if (epic && part) {
+  // Helper to finish current
+  function finalizeCurrent(){
+    if(!current) return;
+    // normalize fields fallback
+    current.VoterName = (current.VoterName || '').trim() || 'NA';
+    current.RelationName = (current.RelationName || '').trim() || 'NA';
+    current.RelationType = (current.RelationType || '').trim() || 'NA';
+    current.HouseNo = (current.HouseNo || '').trim() || 'NA';
+    current.Age = (current.Age || '').trim() || 'NA';
+    current.Gender = (current.Gender || '').trim() || 'NA';
+    current.EPIC_NO = (current.EPIC_NO || '').trim() || 'NA';
+    current.PartNo = (current.PartNo || '').trim() || 'NA';
+    voters.push(current);
+    current = null;
+  }
 
-            // previous save
-            if (Object.keys(current).length > 0) {
-                voters.push(current);
-            }
+  // We'll iterate and when we see EPIC+Part or EPIC line: start new record
+  for(let i=0;i<lines.length;i++){
+    let line = lines[i];
+    // convert Hindi digits if any for easier extraction
+    line = hindiToEnglishDigits(line);
 
-            // new voter
-            current = {
-                SerialNo: serial++,
-                EPIC_NO: epic[0],
-                PartNo: part[0],
-                VoterName: "",
-                RelationName: "",
-                RelationType: "",
-                HouseNo: "",
-                Age: "",
-                Gender: ""
-            };
+    // Try detect EPIC+Part in this line
+    const ep = extractEpicAndPart(line);
+    if(ep && ep.epic){
+      // If we already have a current (partial), finalize it first
+      if(current && (current.EPIC_NO || current.VoterName || current.RelationName)) {
+        finalizeCurrent();
+      }
+      // Start new
+      current = {
+        SerialNo: null, // we will set serials at final step
+        EPIC_NO: ep.epic || 'NA',
+        PartNo: ep.part || 'NA',
+        VoterName: '',
+        RelationName: '',
+        RelationType: '',
+        HouseNo: '',
+        Age: '',
+        Gender: ''
+      };
+      // Sometimes EPIC line contains additional text like name after part -> attempt to extract name part after part
+      const afterPart = line.split(ep.part || '').pop();
+      if(afterPart && afterPart.trim()){
+        const cand = afterPart.replace(/[:\-–—]/g,'').trim();
+        if(cand && !/र[गभ]/i.test(cand)) {
+          // If looks like a name, fill
+          if(!current.VoterName || current.VoterName==='') current.VoterName = cand;
         }
-
-        // -------- NAME ----------
-        if (line.includes("मतदाराचे पूर्ण")) {
-            let name = clean(line.split(":")[1]);
-            if (name && name.length > 1) {
-                current.VoterName = name;
-            }
-        }
-
-        // -------- Relation Husband ----------
-        if (line.includes("पतीचे नाव")) {
-            let name = clean(line.split(":")[1]);
-            if (name) {
-                current.RelationName = name;
-                current.RelationType = "Husband";
-            }
-        }
-
-        // -------- Relation Father ----------
-        if (line.includes("वडिलांचे नाव")) {
-            let name = clean(line.split(":")[1]);
-            if (name) {
-                current.RelationName = name;
-                current.RelationType = "Father";
-            }
-        }
-
-        // -------- House ----------
-        if (line.includes("घर क्रमांक")) {
-            let h = clean(line.split(":")[1]);
-            if (h) current.HouseNo = h;
-        }
-
-        // -------- Age ----------
-        if (line.includes("वय")) {
-            let age = line.match(/\d+/);
-            if (age) current.Age = age[0];
-        }
-
-        // -------- Gender ----------
-        if (line.includes("लिंग")) {
-            if (line.includes("पु")) current.Gender = "Male";
-            else if (line.includes("स्त्री")) current.Gender = "Female";
-        }
-
-    });
-
-    // last save
-    if (Object.keys(current).length > 0) {
-        voters.push(current);
+      }
+      continue;
     }
 
-    // Show JSON
-    document.getElementById("jsonOutput").textContent =
-        JSON.stringify(voters, null, 2);
-}
-</script>
+    // If no current yet and line starts with number serial only like '574' followed by next line having EPIC => skip serial lines
+    const onlyNum = line.match(/^\d{1,4}$/);
+    if(onlyNum){
+      // skip - serial will be assigned after parsing
+      continue;
+    }
 
+    // If current is null and we encounter a voter name label before EPIC (rare), attempt best-effort: skip until EPIC
+    if(!current){
+      // attempt to see if line contains 'मतदाराचे' (name) and EPIC might be on another line - we can buffer but safer to skip
+      continue;
+    }
+
+    // Now current exists; parse known labels or patterns. Many labels are either on same line "मतदाराचे पूर्ण: name" or split:
+    // If line contains ':' likely "label: value"
+    const lower = line.toLowerCase();
+
+    // NAME labels
+    if(lower.includes('मतदाराचे पूर्ण') || lower.includes('मतदाराचे नाव') || lower.includes('मतदाराचे')) {
+      // value may be after ':' or on next line
+      let parts = line.split(':');
+      let val = parts.slice(1).join(':').trim();
+      if(!val){
+        // try next line
+        const next = lines[i+1] ? hindiToEnglishDigits(lines[i+1]) : '';
+        const cleanedNext = cleanLineRaw(next);
+        if(cleanedNext && !/rbg/i.test(cleanedNext) && !/घर क्रमांक/i.test(cleanedNext) && !/वय/i.test(cleanedNext) && !/लिंग/i.test(cleanedNext)){
+          val = cleanedNext;
+          i++; // consume next line
+        }
+      }
+      if(val) {
+        current.VoterName = (current.VoterName ? (current.VoterName + ' ' + val) : val).trim();
+        continue;
+      }
+    }
+
+    // Relation Husband
+    if(lower.includes('पतीचे नाव') || lower.startsWith('पतीचे') || lower.includes('pati')) {
+      let parts = line.split(':');
+      let val = parts.slice(1).join(':').trim();
+      if(!val){
+        const next = lines[i+1] ? lines[i+1] : '';
+        if(next && !/rbg/i.test(next) && !/घर क्रमांक/i.test(next) && !/वय/i.test(next) && !/लिंग/i.test(next)){
+          val = cleanLineRaw(next); i++;
+        }
+      }
+      if(val){
+        current.RelationName = val;
+        current.RelationType = 'Husband';
+      }
+      continue;
+    }
+
+    // Relation Father
+    if(lower.includes('वडिलाचे') || lower.includes('वडिलांचे नाव') || lower.includes('वडील')) {
+      let parts = line.split(':');
+      let val = parts.slice(1).join(':').trim();
+      if(!val){
+        const next = lines[i+1] ? lines[i+1] : '';
+        if(next && !/rbg/i.test(next) && !/घर क्रमांक/i.test(next) && !/वय/i.test(next) && !/लिंग/i.test(next)){
+          val = cleanLineRaw(next); i++;
+        }
+      }
+      if(val){
+        current.RelationName = val;
+        current.RelationType = 'Father';
+      }
+      continue;
+    }
+
+    // Other relation-like labels e.g., 'आईचे नाव' -> treat as RelationName with type NA (mother)
+    if(lower.includes('आईचे नाव') || lower.includes('आई')) {
+      let parts = line.split(':');
+      let val = parts.slice(1).join(':').trim();
+      if(!val){
+        const next = lines[i+1] ? lines[i+1] : '';
+        if(next && !/rbg/i.test(next)) { val = cleanLineRaw(next); i++; }
+      }
+      if(val){
+        current.RelationName = val;
+        current.RelationType = 'Mother';
+      }
+      continue;
+    }
+
+    // House number / address
+    if(lower.includes('घर क्रमांक') || lower.includes('घर क्रमांक :') || lower.includes('house')) {
+      let parts = line.split(':');
+      let val = parts.slice(1).join(':').trim();
+      if(!val){
+        const next = lines[i+1] ? lines[i+1] : '';
+        if(next && !/rbg/i.test(next)) { val = cleanLineRaw(next); i++; }
+      }
+      if(val) current.HouseNo = cleanLineRaw(val);
+      continue;
+    }
+
+    // Age (वय)
+    if(lower.includes('वय') || /\bage\b/i.test(lower)) {
+      // try to extract digits from line; if missing, check next line
+      let m = line.match(/(\d{1,3})/);
+      if(!m){
+        const next = lines[i+1] ? lines[i+1] : '';
+        const nextDigits = next.match(/(\d{1,3})/);
+        if(nextDigits){ m = nextDigits; i++; }
+      }
+      if(m) current.Age = m[1];
+      continue;
+    }
+
+    // Gender
+    if(lower.includes('लिंग') || lower.includes('gender')) {
+      // may be on same line or next
+      let parts = line.split(':');
+      let val = parts.slice(1).join(':').trim();
+      if(!val){
+        const next = lines[i+1] ? lines[i+1] : '';
+        if(next && !/rbg/i.test(next)) { val = next; i++; }
+      }
+      val = val.toLowerCase();
+      if(val.startsWith('पु') || val.startsWith('m') ) current.Gender = 'Male';
+      else if(val.startsWith('स्त्री') || val.startsWith('f')) current.Gender = 'Female';
+      else current.Gender = val || current.Gender;
+      continue;
+    }
+
+    // Lines that look like plain names without labels — sometimes appear after the label 'नांव' etc.
+    // If current.VoterName is empty and this line seems like a name (not EPIC, not house, not number), take it.
+    if(!current.VoterName){
+      // heuristics: not numeric, not very long with commas like address, not containing 'चawl' or 'chawl' suggests name — but we'll accept as name if contains spaces and letters
+      if(!/RBG/i.test(line) && !/\d{1,3}\/\d{1,3}\/\d{1,4}/.test(line) && !/घर क्रमांक|Photo|Available|लिंग|वय|पतीचे|वडिलांचे|आईचे/i.test(line)){
+        // treat as name if it contains two words (first+last) or Devanagari letters
+        if(/[^\d,\/]/.test(line)){
+          // append if current.VoterName empty
+          if(!current.VoterName || current.VoterName==='') current.VoterName = line;
+          else if(current.VoterName.length < 2) current.VoterName = (current.VoterName + ' ' + line).trim();
+        }
+      }
+    }
+
+    // If line contains address-like words (Chawl, compound, nagar) and HouseNo empty => set house
+    if(!current.HouseNo){
+      if(/chawl|compound|nagar|colony|gali|GALA|BAJARANG|MAHADEV|CHAWL/i.test(line)){
+        current.HouseNo = line;
+        continue;
+      }
+    }
+
+    // If reached here, no specific label matched — skip or log
+  }
+
+  // finalize last
+  if(current && (current.EPIC_NO || current.VoterName)) finalizeCurrent();
+
+  // Assign SerialNo sequentially and convert digits to english for Age
+  for(let i=0;i<voters.length;i++){
+    voters[i].SerialNo = i+1;
+    if(voters[i].Age) voters[i].Age = hindiToEnglishDigits(String(voters[i].Age));
+  }
+
+  // Remove duplicates by EPIC+Part (keep first)
+  const seen = new Set();
+  const unique = [];
+  for(const v of voters){
+    const key = (v.EPIC_NO || 'NA') + '|' + (v.PartNo || 'NA');
+    if(!seen.has(key)){
+      seen.add(key);
+      unique.push(v);
+    }
+  }
+
+  return unique;
+}
+
+// ---------------- UI actions ----------------
+let lastParsed = [];
+
+document.getElementById('btnParse').addEventListener('click', () => {
+  const raw = document.getElementById('raw').value || document.getElementById('raw').textContent || document.getElementById('raw').innerText;
+  if(!raw || raw.trim().length < 5){
+    alert('कृपया raw voter text यहाँ paste करें।');
+    return;
+  }
+  lastParsed = parseVoterText(raw);
+  // prepare CSV
+  const header = ['SerialNo','EPIC_NO','PartNo','VoterName','RelationType','RelationName','HouseNo','Age','Gender'];
+  const rows = [header.join(',')];
+  lastParsed.forEach(v => {
+    const row = [
+      v.SerialNo,
+      `"${String(v.EPIC_NO||'').replace(/"/g,'""')}"`,
+      `"${String(v.PartNo||'').replace(/"/g,'""')}"`,
+      `"${String(v.VoterName||'').replace(/"/g,'""')}"`,
+      `"${String(v.RelationType||'').replace(/"/g,'""')}"`,
+      `"${String(v.RelationName||'').replace(/"/g,'""')}"`,
+      `"${String(v.HouseNo||'').replace(/"/g,'""')}"`,
+      `"${String(v.Age||'').replace(/"/g,'""')}"`,
+      `"${String(v.Gender||'').replace(/"/g,'""')}"`
+    ].join(',');
+    rows.push(row);
+  });
+  document.getElementById('csvPreview').textContent = rows.join('\n');
+  document.getElementById('jsonPreview').textContent = JSON.stringify(lastParsed, null, 2);
+  document.getElementById('status').innerText = `Parsed ${lastParsed.length} voters. अब आप CSV/JSON डाउनलोड या Firebase में भेज सकते हैं।`;
+});
+
+// Download CSV
+document.getElementById('btnCSV').addEventListener('click', () => {
+  if(!lastParsed || !lastParsed.length){ alert('पहले Parse करें'); return; }
+  const csv = document.getElementById('csvPreview').textContent;
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'voter_list.csv';
+  a.click();
+});
+
+// Download JSON
+document.getElementById('btnJSON').addEventListener('click', () => {
+  if(!lastParsed || !lastParsed.length){ alert('पहले Parse करें'); return; }
+  const json = JSON.stringify(lastParsed, null, 2);
+  const blob = new Blob([json], {type:'application/json;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'voter_list.json';
+  a.click();
+});
+
+// Upload to Firebase (unique key EPIC_Part)
+document.getElementById('btnUpload').addEventListener('click', async () => {
+  if(!lastParsed || !lastParsed.length){ alert('पहले Parse करें'); return; }
+  const confirmed = confirm(`Firebase में ${lastParsed.length} रिकॉर्ड upload करना है — continue?`);
+  if(!confirmed) return;
+  let success = 0, fail = 0;
+  document.getElementById('status').innerText = 'Uploading...';
+  for(const v of lastParsed){
+    try{
+      // key: safe replace
+      const keyBase = (v.EPIC_NO || 'NA') + '__' + (v.PartNo || 'NA');
+      const safeKey = keyBase.replace(/[^a-zA-Z0-9_\-]/g,'_');
+      await db.ref('voters/' + safeKey).set(v);
+      success++;
+    } catch(e){
+      console.error('Upload error:', e);
+      fail++;
+    }
+  }
+  document.getElementById('status').innerText = `Upload complete — Success: ${success}, Fail: ${fail}`;
+  alert(`Upload finished. Success: ${success}, Fail: ${fail}`);
+});
+
+</script>
 </body>
 </html>
