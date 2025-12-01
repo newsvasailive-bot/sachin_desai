@@ -8,16 +8,16 @@
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-database-compat.js"></script>
 <style>
 body { font-family: Arial; padding:20px; background:#f9f9f9; }
-textarea { width:100%; height:300px; margin-bottom:10px; }
+textarea { width:100%; height:200px; margin-bottom:10px; }
 button { padding:10px 20px; margin:5px; cursor:pointer; }
-pre { background:#eee; padding:10px; overflow-x:auto; max-height:300px; }
+pre { background:#eee; padding:10px; overflow-x:auto; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 
 <h2>Voter List Parser & Firebase Upload</h2>
 
-<textarea id="voterText" placeholder="Paste raw voter text here..."></textarea>
+<textarea id="voterText" placeholder="Raw voter text paste here..."></textarea>
 <br>
 <button onclick="parseVoters()">Parse to CSV & JSON</button>
 <button onclick="downloadCSV()">Download CSV</button>
@@ -47,88 +47,95 @@ const db = firebase.database();
 // ===== Parsing Logic =====
 let voters = [];
 
+function cleanText(str) {
+    if(!str) return '';
+    return str.replace(/(नांव|Available|Photo)/g,'').replace(/\r?\n/g,' ').trim();
+}
+
 function parseVoters() {
     const text = document.getElementById('voterText').value;
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.includes("Photo"));
-
+    const lines = text.split(/\r?\n/);
     voters = [];
     let serial = 1;
-    let current = null;
+    let current = {};
 
     lines.forEach(line => {
+        line = line.trim();
+        if(!line) return;
 
-        // EPIC_NO detection
-        if (line.match(/^RBG\d+/)) {
-            if (current) voters.push(current);
-            let parts = line.split(/\s+/);
-            let epic = parts[0] || "NA";
-            let part = parts[1] || "NA";
+        // EPIC_NO & PartNo
+        const epicMatch = line.match(/RBG\d+\s+[\d\/]+/);
+        if(epicMatch) {
+            if(Object.keys(current).length) voters.push(current);
+            const parts = epicMatch[0].split(/\s+/);
             current = {
                 SerialNo: serial++,
-                EPIC_NO: epic,
-                PartNo: part,
-                VoterName: "NA",
-                RelationName: "NA",
-                RelationType: "NA",
-                HouseNo: "NA",
-                Age: "NA",
-                Gender: "NA"
+                EPIC_NO: parts[0],
+                PartNo: parts[1] || '',
+                VoterName: '',
+                RelationName: '',
+                RelationType: '',
+                HouseNo: '',
+                Age: '',
+                Gender: ''
             };
-            return;
         }
 
-        // Voter Name
-        if (line.includes("मतदाराचे पूर्ण")) {
-            let name = line.split(':')[1]?.trim();
-            current.VoterName = name || "NA";
-            return;
+        // VoterName
+        if(line.startsWith('| मतदाराचे पूर्ण') || line.startsWith('मतदाराचे पूर्ण')) {
+            const name = cleanText(line.split(':')[1]);
+            if(name) current.VoterName = name;
         }
 
-        // Relation Name
-        if (line.includes("पतीचे नाव")) {
-            current.RelationName = line.split(':')[1]?.trim() || "NA";
-            current.RelationType = "Husband";
-            return;
+        // Relation
+        if(line.startsWith('| पतीचे नाव') || line.startsWith('पतीचे नाव')) {
+            const name = cleanText(line.split(':')[1]);
+            if(name) {
+                current.RelationName = name;
+                current.RelationType = 'Husband';
+            }
         }
-        if (line.includes("वडिलांचे नाव")) {
-            current.RelationName = line.split(':')[1]?.trim() || "NA";
-            current.RelationType = "Father";
-            return;
+        if(line.startsWith('| वडिलांचे नाव') || line.startsWith('वडिलांचे नाव')) {
+            const name = cleanText(line.split(':')[1]);
+            if(name) {
+                current.RelationName = name;
+                current.RelationType = 'Father';
+            }
         }
 
-        // House No
-        if (line.includes("घर क्रमांक")) {
-            let house = line.split(':')[1]?.trim() || line.replace("घर क्रमांक","").trim() || "NA";
-            current.HouseNo = house;
-            return;
+        // HouseNo
+        if(line.startsWith('| घर क्रमांक') || line.startsWith('घर क्रमांक')) {
+            const house = cleanText(line.split(':')[1]);
+            if(house) current.HouseNo = house;
         }
 
         // Age
-        if (line.includes("वय")) {
-            let age = line.split(':')[1]?.trim() || "NA";
-            current.Age = age;
-            return;
+        if(line.startsWith('| वय') || line.startsWith('वय')) {
+            const ageMatch = line.match(/\d+/);
+            if(ageMatch) current.Age = ageMatch[0];
         }
 
         // Gender
-        if (line.includes("लिंग")) {
-            let g = line.split(':')[1]?.trim();
-            current.Gender = (g==='पु')?'Male':(g==='स्त्री'?'Female':'NA');
-            return;
+        if(line.startsWith('| लिंग') || line.startsWith('लिंग')) {
+            const g = line.split(':')[1]?.trim();
+            if(g) current.Gender = (g.startsWith('पु'))?'Male':(g.startsWith('स्त्री')?'Female':'');
         }
     });
 
-    if (current) voters.push(current);
+    if(Object.keys(current).length) voters.push(current);
 
-    // Display CSV
+    // ===== CSV =====
+    const escapeCSV = str => `"${String(str || '').replace(/"/g,'""').replace(/\n/g,' ').replace(/\r/g,' ')}"`;
     const csvHeader = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
-    const csvRows = voters.map(v => `${v.SerialNo},${v.EPIC_NO},${v.PartNo},"${v.VoterName}","${v.RelationName}",${v.RelationType},${v.HouseNo},${v.Age},${v.Gender}`);
+    const csvRows = voters.map(v => [
+        v.SerialNo, v.EPIC_NO, v.PartNo, 
+        escapeCSV(v.VoterName), escapeCSV(v.RelationName), v.RelationType, 
+        escapeCSV(v.HouseNo), v.Age, v.Gender
+    ].join(','));
     document.getElementById('csvOutput').textContent = [csvHeader, ...csvRows].join('\n');
 
-    // Display JSON
+    // ===== JSON =====
     document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
-
-    alert(`Parsed ${voters.length} voters successfully!`);
 }
 
 // ===== Download Functions =====
@@ -152,14 +159,19 @@ function downloadJSON() {
 
 // ===== Firebase Push =====
 function pushFirebase() {
-    if(voters.length===0){ alert("Please parse voters first!"); return;}
+    let success = 0, fail = 0;
     voters.forEach(v => {
-        const newRef = db.ref('voters').push();
-        newRef.set(v);
+        try {
+            const key = v.EPIC_NO + '_' + v.PartNo; // unique key
+            db.ref('voters/' + key).set(v);
+            success++;
+        } catch(e) {
+            fail++;
+            console.error('Firebase Error:', e);
+        }
     });
-    alert('Voters uploaded to Firebase!');
+    alert(`Voters uploaded! Success: ${success}, Fail: ${fail}`);
 }
 </script>
-
 </body>
 </html>
