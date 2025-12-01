@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Voter List Parser & Firebase Uploader</title>
+
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-database-compat.js"></script>
+
 <style>
 body { font-family: Arial, sans-serif; padding:20px; background:#f9f9f9; }
 textarea { width:100%; height:200px; margin-bottom:10px; border: 1px solid #ccc; padding: 10px; box-sizing: border-box; }
@@ -43,7 +45,6 @@ h2, h3 { color: #333; }
 // =================================================================
 // ===== 🛑 FIREBASE CONFIGURATION (CHANGE THIS!) 🛑 =====
 // =================================================================
-// इन डमी वैल्यू को Firebase Console से प्राप्त अपने असली KEYS से बदलें।
 const firebaseConfig = {
   apiKey: "AIzaSyCdjqVFKOQ1dtaXCGFUUtsJWbFdGNTo-xw", 
   authDomain: "voter-25c94.firebaseapp.com",
@@ -53,11 +54,12 @@ const firebaseConfig = {
   messagingSenderId: "297773534400",
   appId: "1:297773534400:web:3722c487b8c83e9b787125"
 };
+// Firebase Initialization
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ===== Parsing Logic (FINAL ROBUST VERSION) =====
-let voters = [];
+// FIX: 'voters' वेरिएबल को initialization से पहले एक्सेस करने की त्रुटि को रोकने के लिए इसे यहां परिभाषित करें
+let voters = []; 
 
 /**
  * पाठ से अनावश्यक शब्द और फॉर्मेटिंग हटाता है।
@@ -77,20 +79,26 @@ function cleanText(str) {
  */
 function parseVoters() {
     const text = document.getElementById('voterText').value;
+    // यदि टेक्स्ट खाली है, तो बाहर निकल जाएँ
+    if (!text.trim()) {
+        alert("कृपया कच्चा वोटर लिस्ट टेक्स्ट पेस्ट करें।");
+        return;
+    }
+    
     const lines = text.split(/\r?\n/);
     voters = [];
     let serial = 1;
-    let currentVoterData = {}; // Current voter data object
 
     // पूरे टेक्स्ट को एक स्ट्रिंग में जोड़ें ताकि मल्टी-लाइन फ़ील्ड्स को आसानी से संभाला जा सके
+    // लाइन नंबर और पाइप सिंबल हटाएँ, और अतिरिक्त स्पेस को एक स्पेस से बदलें
     const fullText = lines.join(' ').replace(/\|\s*/g, ' ').replace(/\s+/g, ' ');
 
     // EPIC (RBG...) को नए वोटर रिकॉर्ड की शुरुआत के रूप में पहचानें।
-    // यह EPIC और पार्ट नंबर को एक साथ कैप्चर करता है, भले ही पार्ट नंबर में तीन स्लैश हों।
+    // यह EPIC और पार्ट नंबर को एक साथ कैप्चर करता है।
     const voterBlocks = fullText.split(/([A-Z]{2,}\d{6,}[A-Z]{0,}\s+[\d\/]+)/);
 
     // पहले ब्लॉक (जो अक्सर खाली होता है) को हटा दें
-    if (voterBlocks[0].trim() === '') {
+    if (voterBlocks[0] && voterBlocks[0].trim() === '') {
         voterBlocks.shift();
     }
     
@@ -105,7 +113,7 @@ function parseVoters() {
         const epicMatch = epicPartLine.match(/([A-Z]{2,}\d{6,}[A-Z]{0,})\s+([\d\/]+)/);
         if (!epicMatch) continue; 
 
-        currentVoterData = {
+        let currentVoterData = {
             SerialNo: serial++,
             EPIC_NO: epicMatch[1],
             PartNo: epicMatch[2],
@@ -117,17 +125,16 @@ function parseVoters() {
             Gender: ''
         };
 
-        // --- डेटाब्लॉक से अन्य फ़ील्ड्स एक्सट्रेक्शन (MOST FLEXIBLE REGEX) ---
+        // --- डेटाब्लॉक से अन्य फ़ील्ड्स एक्सट्रेक्शन ---
         
-        // VoterName (मतदाराचे पूर्ण)
-        // यह 'मतदाराचे पूर्ण:' या 'मतदाराचे पूर्ण' के बाद, और 'नांव' या '|' से पहले आने वाले टेक्स्ट को नाम मानेगा।
-        const nameMatch = dataBlock.match(/(?:मतदाराचे पूर्ण|Voter's Full)\s*[:|]?\s*(.*?)(?:नाव|नांव|\||$)/i);
+        // VoterName: 'मतदाराचे पूर्ण:' के बाद और 'नांव' या '|' से पहले
+        const nameMatch = dataBlock.match(/(?:मतदाराचे पूर्ण|Voter's Full)\s*[:|]?\s*(.+?)(?:नांव|\||$)/i);
         if (nameMatch && nameMatch[1]) {
             currentVoterData.VoterName = cleanText(nameMatch[1].trim());
         }
 
-        // Relation (पतीचे/वडिलांचे/आईचे नाव)
-        const relationMatch = dataBlock.match(/(पतीचे|वडिलांचे|आईचे|इतर)\s*नाव\s*:\s*(.+?)(?:\|घर क्रमांक|\s*Photo|$)/i);
+        // Relation: 'पतीचे'/'वडिलांचे'/'आईचे' के बाद
+        const relationMatch = dataBlock.match(/(पतीचे|वडिलांचे|आईचे|इतर)\s*नाव\s*:\s*(.+?)(?:घर क्रमांक|\s*Photo|$)/i);
         if (relationMatch && relationMatch[2]) {
             currentVoterData.RelationName = cleanText(relationMatch[2].trim());
             if (relationMatch[1] === 'पतीचे') currentVoterData.RelationType = 'Husband';
@@ -136,14 +143,14 @@ function parseVoters() {
             else currentVoterData.RelationType = 'Other';
         }
         
-        // Age (वय)
+        // Age:
         const ageMatch = dataBlock.match(/वय\s*:\s*(\d+|[०-९]+)/);
         if(ageMatch) {
             const ageString = ageMatch[1].replace(/[०-९]/g, d => '०१२३४५६७८९'.indexOf(d));
             currentVoterData.Age = parseInt(ageString) || ageMatch[1];
         }
 
-        // Gender (लिंग)
+        // Gender:
         const genderMatch = dataBlock.match(/लिंग\s*:\s*(पु|स्त्री|Male|Female)/i);
         if(genderMatch) {
             const g = genderMatch[1].trim();
@@ -151,14 +158,13 @@ function parseVoters() {
             else if(g.startsWith('स्त्री') || g.startsWith('Fe')) currentVoterData.Gender = 'Female';
         }
 
-        // HouseNo (घर क्रमांक)
-        // यह 'घर क्रमांक' के बाद शुरू होता है और 'वय', 'लिंग', या ब्लॉक के अंत तक चलता है
+        // HouseNo: 'घर क्रमांक' के बाद शुरू होता है और 'वय' या 'लिंग' से पहले
         const houseMatch = dataBlock.match(/घर क्रमांक\s*:\s*(.+?)(?:वय|लिंग|$)/i);
         if (houseMatch && houseMatch[1]) {
             currentVoterData.HouseNo = cleanText(houseMatch[1].trim());
         }
 
-        // Clean up VoterName again just in case
+        // Final cleanup
         currentVoterData.VoterName = cleanText(currentVoterData.VoterName);
         
         voters.push(currentVoterData);
@@ -186,7 +192,7 @@ function parseVoters() {
     }
 }
 
-// ===== Download Functions (No change needed) =====
+// ===== Download Functions =====
 function downloadCSV() {
     const csvContent = document.getElementById('csvOutput').textContent;
     if (!csvContent || csvContent.includes('CSV डेटा यहाँ दिखाई देगा')) {
@@ -213,7 +219,7 @@ function downloadJSON() {
     link.click();
 }
 
-// ===== Firebase Push (No change needed) =====
+// ===== Firebase Push =====
 function pushFirebase() {
     if (voters.length === 0 || !document.getElementById('jsonOutput').textContent.includes('[')) {
         alert("पहले 'Parse to CSV & JSON' बटन दबाकर डेटा को Parse करें।");
