@@ -2,165 +2,150 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Text to JSON & CSV for Firebase</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voter List Parser & Firebase</title>
+<script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.30.0/firebase-database-compat.js"></script>
 <style>
-body { font-family: Arial; background:#f2f2f2; padding:20px; }
-textarea { width:100%; height:250px; padding:10px; font-size:15px; }
-button { padding:10px 20px; margin:10px 5px 10px 0; cursor:pointer; font-size:15px; }
-table { width:100%; border-collapse:collapse; margin-top:20px; background:#fff; }
-th, td { border:1px solid #ccc; padding:8px; font-size:14px; text-align:left; }
-th { background:#222; color:#fff; }
+body { font-family: Arial; padding:20px; background:#f9f9f9; }
+textarea { width:100%; height:200px; margin-bottom:10px; }
+button { padding:10px 20px; margin:5px; cursor:pointer; }
+pre { background:#eee; padding:10px; overflow-x:auto; }
 </style>
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
-<h2>Voter Text → JSON & CSV → Firebase</h2>
+<h2>Voter List Parser & Firebase Upload</h2>
 
-<textarea id="input" placeholder="Yahan voter text paste karein..."></textarea><br>
-<button onclick="extract()">Extract</button>
+<textarea id="voterText" placeholder="Raw voter text paste here..."></textarea>
+<br>
+<button onclick="parseVoters()">Parse to CSV & JSON</button>
 <button onclick="downloadCSV()">Download CSV</button>
 <button onclick="downloadJSON()">Download JSON</button>
-<button onclick="sendFirebase()">Send to Firebase</button>
+<button onclick="pushFirebase()">Send to Firebase</button>
 
-<table id="output">
-<thead>
-<tr>
-<th>SerialNo</th>
-<th>EPIC_NO</th>
-<th>PartNo</th>
-<th>VoterName</th>
-<th>RelationName</th>
-<th>RelationType</th>
-<th>HouseNo</th>
-<th>Age</th>
-<th>Gender</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+<h3>CSV Output:</h3>
+<pre id="csvOutput"></pre>
+
+<h3>JSON Output:</h3>
+<pre id="jsonOutput"></pre>
 
 <script>
-// --- Firebase config ---
+// ===== Your Firebase Config =====
 const firebaseConfig = {
-  apiKey: "AIzaSyCdjqVFKOQ1dtaXCGFUUtsJWbFdGNTo-xw",
-  authDomain: "voter-25c94.firebaseapp.com",
-  databaseURL: "https://voter-25c94-default-rtdb.firebaseio.com",
-  projectId: "voter-25c94",
-  storageBucket: "voter-25c94.appspot.com",
-  messagingSenderId: "297773534400",
-  appId: "1:297773534400:web:3722c487b8c83e9b787125"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
-
 firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-// --- Extraction ---
-function extract() {
-    let text = document.getElementById("input").value;
-    let lines = text.split("\n").map(x => x.trim()).filter(x => x);
-    let tbody = document.querySelector("#output tbody");
-    tbody.innerHTML = "";
+// ===== Parsing Logic =====
+let voters = [];
 
-    let voter = {};
-    let results = [];
-
-    function save() {
-        if (!voter.SerialNo || !voter.EPIC_NO || !voter.VoterName) return;
-        voter.RelationName = voter.RelationName || "NA";
-        voter.RelationType = voter.RelationType || "NA";
-        voter.HouseNo = voter.HouseNo || "NA";
-        voter.Age = voter.Age || "NA";
-        voter.Gender = voter.Gender || "NA";
-        voter.PartNo = voter.PartNo || "NA";
-        results.push({ ...voter });
-        voter = {};
-    }
+function parseVoters() {
+    const text = document.getElementById('voterText').value;
+    const lines = text.split(/\r?\n/);
+    voters = [];
+    let serial = 1;
+    let current = {};
 
     lines.forEach(line => {
-        if (/^\d{1,4}$/.test(line)) { save(); voter.SerialNo = line; return; }
-        if (/^[A-Z]{3}\d{5,}/.test(line.replace(/\s/g, ""))) {
-            let cleaned = line.replace(/\s/g,"");
-            voter.EPIC_NO = cleaned.match(/^[A-Z]{3}\d{5,}/)[0];
-            let p = cleaned.match(/\d+\/\d+\/\d+/);
-            if (p) voter.PartNo = p[0];
-            return;
+        line = line.trim();
+        if (!line) return;
+
+        // EPIC_NO & PartNo
+        const epicMatch = line.match(/RBG\d+\s+[\d/]+/);
+        if (epicMatch) {
+            if (Object.keys(current).length) voters.push(current);
+            current = { SerialNo: serial++, EPIC_NO:'', PartNo:'', VoterName:'', RelationName:'', RelationType:'', HouseNo:'', Age:'', Gender:'' };
+            const parts = epicMatch[0].split(/\s+/);
+            current.EPIC_NO = parts[0];
+            current.PartNo = parts[1];
         }
-        if (line.includes("मतदाराचे पूर्ण") || line.includes("मतदाराचे नाव") || line.includes("नांव")) {
-            voter.VoterName = line.split(":").pop().trim();
-            return;
+
+        // VoterName
+        if (line.startsWith('| मतदाराचे पूर्ण') || line.startsWith('मतदाराचे पूर्ण')) {
+            const name = line.split(':')[1]?.trim();
+            if (name) current.VoterName = name;
         }
-        if (line.includes("पतीचे") || line.includes("पति")) {
-            voter.RelationType = "Husband";
-            voter.RelationName = line.split(":").pop().trim();
-            return;
+
+        // RelationName
+        if (line.startsWith('| पतीचे नाव') || line.startsWith('पतीचे नाव')) {
+            const name = line.split(':')[1]?.trim();
+            if (name) {
+                current.RelationName = name;
+                current.RelationType = 'Husband';
+            }
         }
-        if (line.includes("वडिलांचे") || line.includes("वडील") || line.includes("Father")) {
-            voter.RelationType = "Father";
-            voter.RelationName = line.split(":").pop().trim();
-            return;
+        if (line.startsWith('| वडिलांचे नाव') || line.startsWith('वडिलांचे नाव')) {
+            const name = line.split(':')[1]?.trim();
+            if (name) {
+                current.RelationName = name;
+                current.RelationType = 'Father';
+            }
         }
-        if (line.includes("घर क्रमांक")) { voter.HouseNo = line.split(":").pop().trim() || "NA"; return; }
-        if (line.includes("वय")) { voter.Age = line.split(":").pop().trim(); return; }
-        if (line.includes("लिंग") || line.includes("Gender")) {
-            voter.Gender = (line.includes("स्त्री") || line.includes("Female")) ? "Female" : "Male";
-            save(); // Save on gender
-            return;
+
+        // HouseNo
+        if (line.startsWith('| घर क्रमांक') || line.startsWith('घर क्रमांक')) {
+            const house = line.split(':')[1]?.trim();
+            if (house) current.HouseNo = house;
+        }
+
+        // Age
+        if (line.startsWith('| वय') || line.startsWith('वय')) {
+            const age = line.split(':')[1]?.trim();
+            if (age) current.Age = age;
+        }
+
+        // Gender
+        if (line.startsWith('| लिंग') || line.startsWith('लिंग')) {
+            const g = line.split(':')[1]?.trim();
+            if (g) current.Gender = (g==='पु')?'Male':(g==='स्त्री'?'Female':'');
         }
     });
-    save();
 
-    // Show table
-    results.forEach(r => {
-        tbody.innerHTML += `<tr>
-            <td>${r.SerialNo}</td>
-            <td>${r.EPIC_NO}</td>
-            <td>${r.PartNo}</td>
-            <td>${r.VoterName}</td>
-            <td>${r.RelationName}</td>
-            <td>${r.RelationType}</td>
-            <td>${r.HouseNo}</td>
-            <td>${r.Age}</td>
-            <td>${r.Gender}</td>
-        </tr>`;
-    });
+    if (Object.keys(current).length) voters.push(current);
 
-    window.extracted = results;
+    // Display CSV
+    const csvHeader = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
+    const csvRows = voters.map(v => `${v.SerialNo},${v.EPIC_NO},${v.PartNo},"${v.VoterName}","${v.RelationName}",${v.RelationType},${v.HouseNo},${v.Age},${v.Gender}`);
+    document.getElementById('csvOutput').textContent = [csvHeader, ...csvRows].join('\n');
+
+    // Display JSON
+    document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
 }
 
-// --- Download CSV ---
+// ===== Download Functions =====
 function downloadCSV() {
-    if (!window.extracted) return alert("Extract pehle karein!");
-    let csv = "SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender\n";
-    window.extracted.forEach(r => {
-        csv += `${r.SerialNo},${r.EPIC_NO},${r.PartNo},"${r.VoterName}","${r.RelationName}","${r.RelationType}","${r.HouseNo}","${r.Age}","${r.Gender}"\n`;
-    });
-    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "voter_list.csv";
-    a.click();
+    const csvContent = document.getElementById('csvOutput').textContent;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "voter_list.csv";
+    link.click();
 }
 
-// --- Download JSON ---
 function downloadJSON() {
-    if (!window.extracted) return alert("Extract pehle karein!");
-    const blob = new Blob([JSON.stringify(window.extracted,null,2)], { type:"application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "voter_list.json";
-    a.click();
+    const jsonContent = document.getElementById('jsonOutput').textContent;
+    const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "voter_list.json";
+    link.click();
 }
 
-// --- Send to Firebase ---
-function sendFirebase() {
-    if (!window.extracted) return alert("Extract pehle karein!");
-    const dbRef = firebase.database().ref('voters');
-    window.extracted.forEach(voter => {
-        dbRef.push(voter);
+// ===== Firebase Push =====
+function pushFirebase() {
+    voters.forEach(v => {
+        const newRef = db.ref('voters').push();
+        newRef.set(v);
     });
-    alert("Data Firebase me bhej diya gaya!");
+    alert('Voters uploaded to Firebase!');
 }
 </script>
 
