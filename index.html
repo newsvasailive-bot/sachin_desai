@@ -2,53 +2,21 @@
 <html lang="hi">
 <head>
 <meta charset="UTF-8">
-<title>CSV Viewer Powerful Script (Fixed)</title>
-
+<title>Powerful CSV Viewer</title>
 <style>
-    body{
-        font-family: Arial, sans-serif;
-        background:#f2f2f2;
-        padding:20px;
-    }
-    h2{
-        text-align:center;
-    }
-    #fileInput{
-        margin-bottom:20px;
-        display:block;
-    }
-    table{
-        width:100%;
-        border-collapse:collapse;
-        background:white;
-    }
-    th, td{
-        border:1px solid #444;
-        padding:8px;
-        font-size:14px;
-    }
-    th{
-        background:#222;
-        color:white;
-        position:sticky;
-        top:0;
-    }
-    tr:nth-child(even){
-        background:#f9f9f9;
-    }
-
-    /* Mobile scroll */
-    .table-container{
-        width:100%;
-        overflow-x:auto;
-    }
+    body { font-family: Arial,sans-serif; padding: 20px; background:#f7f7f7; }
+    h2 { text-align:center; }
+    #fileInput { display:block; margin:20px auto; padding:10px; }
+    .table-container { width:100%; overflow-x:auto; }
+    table { border-collapse: collapse; width:100%; background:white; }
+    th, td { border:1px solid #333; padding:8px; text-align:left; font-size:14px; }
+    th { background:#222; color:white; position:sticky; top:0; }
+    tr:nth-child(even) { background:#f2f2f2; }
 </style>
 </head>
-
 <body>
 
-<h2>Powerful CSV Viewer (Fixed Version)</h2>
-
+<h2>Powerful CSV Viewer</h2>
 <input type="file" id="fileInput" accept=".csv">
 
 <div class="table-container">
@@ -58,65 +26,57 @@
 <script>
 document.getElementById("fileInput").addEventListener("change", function(e){
     let file = e.target.files[0];
-    if(!file){
-        alert("कृपया CSV फ़ाइल चुनें");
-        return;
-    }
+    if(!file) { alert("कृपया CSV फ़ाइल चुनें"); return; }
 
     let reader = new FileReader();
     reader.onload = function(event){
         let text = event.target.result;
-        processCSV(text);
+        displayCSV(text);
     };
-    reader.readAsText(file, "UTF-8");
+    reader.readAsText(file,"UTF-8");
 });
 
-
-function processCSV(csv) {
-    csv = csv.replace(/\r/g, "");
-    let rows = csv.split("\n").filter(x => x.trim() !== "");
+function displayCSV(csvText){
+    csvText = csvText.replace(/\r/g,"");
+    let rows = csvText.split("\n").filter(r=>r.trim()!=="");
 
     let table = document.getElementById("csvTable");
     table.innerHTML = "";
 
-    rows.forEach((row, i) => {
+    rows.forEach((row,index)=>{
         let tr = document.createElement("tr");
-        let cols = parseCSV(row);
+        let cols = parseCSVRow(row);
 
-        cols.forEach(col => {
-            let cell = document.createElement(i === 0 ? "th" : "td");
+        cols.forEach(col=>{
+            let cell = document.createElement(index===0?"th":"td");
             cell.textContent = col.trim();
             tr.appendChild(cell);
         });
 
         table.appendChild(tr);
     });
-
-    alert("CSV Loaded Successfully!");
 }
 
+function parseCSVRow(row){
+    let result = [];
+    let col = "";
+    let inQuotes = false;
 
-function parseCSV(line) {
-    const result = [];
-    let current = "";
-    let insideQuotes = false;
+    for(let i=0;i<row.length;i++){
+        let char = row[i];
 
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-
-        if (char === '"') {
-            insideQuotes = !insideQuotes;
+        if(char=='"'){
+            inQuotes = !inQuotes;
         }
-        else if (char === ',' && !insideQuotes) {
-            result.push(current);
-            current = "";
+        else if(char==',' && !inQuotes){
+            result.push(col);
+            col="";
         }
-        else {
-            current += char;
+        else{
+            col+=char;
         }
     }
-    result.push(current);
-
+    result.push(col);
     return result;
 }
 </script>
