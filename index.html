@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter List CSV Fixer - Final Debug</title>
+<title>Voter List CSV Fixer - Final Working</title>
 <style>
 body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
 h2 { text-align: center; color: #333; }
@@ -34,7 +34,7 @@ textarea {
     width: 100%;
 }
 #generateButton {
-    background-color: #dc3545; /* लाल/त्रुटि रंग */
+    background-color: #dc3545; 
     color: white;
 }
 #generateButton:hover { background-color: #c82333; }
@@ -59,7 +59,7 @@ textarea {
 </head>
 <body>
 
-<h2>Voter List CSV Fixer ❌ (Debugging Mode)</h2>
+<h2>Voter List CSV Fixer ✅ (Working Logic)</h2>
 <p>Raw voter text यहाँ paste करें:</p>
 <textarea id="inputText" placeholder="कच्चा टेक्स्ट यहाँ पेस्ट करें"></textarea>
 
@@ -73,7 +73,7 @@ textarea {
 
 <script>
 // =======================================================================
-// CSV GENERATION LOGIC (सबसे लचीला विभाजन)
+// CSV GENERATION LOGIC (Looping and Matching)
 // =======================================================================
 function generateCSV() {
     const raw = document.getElementById('inputText').value.trim();
@@ -90,57 +90,35 @@ function generateCSV() {
     // 1. डेटा को साफ़ करें और एक सिंगल स्ट्रिंग में समेटें
     const cleanedRaw = raw.replace(/\|\s*/g, ' ').replace(/\n/g, ' ');
     
-    // 2. EPIC पैटर्न के आधार पर रिकॉर्ड को विभाजित करें।
-    // EPIC: \w{7,} (कम से कम 7 अल्फ़ान्यूमेरिक अक्षर)
-    // PartNo: (\d{1,3}\/\d{1,3}\/\d+)? (ऑप्शनल पार्ट नंबर)
-    const epicPartPattern = /(\w{7,})\s*(\d{1,3}\/\d{1,3}\/\d+)?/g; 
+    // 2. सभी EPIC पैटर्न को खोजने के लिए RegEx
+    // यह RegEx पूरे रिकॉर्ड को अलग करने के लिए इस्तेमाल होगा।
+    const recordSeparatorRegex = /(\w{7,})\s*(\d{1,3}\/\d{1,3}\/\d+)?/g; 
+
+    // RegEx का उपयोग करके सभी EPIC नंबरों के इंडेक्स (Index) प्राप्त करें
+    let matches = [...cleanedRaw.matchAll(recordSeparatorRegex)];
     
-    const records = cleanedRaw.split(epicPartPattern).filter(r => r.trim() !== '');
-
-    let combinedRecords = [];
-    
-    // 3. विभाजन की जाँच
-    if (records.length === 0) {
-        outputElement.value = "❌ त्रुटि: विभाजन विफल। कोई EPIC पैटर्न नहीं मिला।";
-        return;
-    }
-
-    // 4. records array को व्यवस्थित करें
-    // records के स्ट्रक्चर को देखते हुए, हम हर 3 तत्वों को एक रिकॉर्ड मानते हैं (EPIC, PartNo, Data)
-    for (let i = 0; i < records.length; i += 3) {
-        let epic = records[i]; // EPIC नंबर
-        let part = records[i+1] || ''; // PartNo
-        let data = records[i+2] || ''; // डेटा
-        
-        // यदि EPIC और डेटा दोनों मौजूद हैं, तो इसे एक रिकॉर्ड के रूप में जोड़ें
-        if (epic.trim() && data.trim()) {
-             // डेटा को एक साथ जोड़ें: EPIC + PartNo + Data
-             combinedRecords.push(epic.trim() + ' ' + part.trim() + ' ' + data.trim());
-        }
-    }
-
-    if (combinedRecords.length === 0) {
-        outputElement.value = 
-            "❌ त्रुटि: डेटा विभाजन सफल हुआ, लेकिन कोई भी पूर्ण रिकॉर्ड नहीं मिला। यह टेक्स्ट प्रारूप में एक बड़ी विसंगति का संकेत है।";
+    if (matches.length === 0) {
+        outputElement.value = "❌ त्रुटि: विभाजन विफल। कोई EPIC पैटर्न ('RBG1234567') नहीं मिला।";
         return;
     }
     
-    // **************** पार्सिंग शुरू ****************
     const header = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
     let output = header + '\n';
     let serial = 1;
 
-    combinedRecords.forEach(fullRecord => {
+    // 3. डेटा को प्रोसेस करें (प्रत्येक EPIC मैच पर लूप करें)
+    for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index;
+        const end = (i + 1 < matches.length) ? matches[i+1].index : cleanedRaw.length;
+        
+        // यह 'fullRecord' एक EPIC से शुरू होकर अगले EPIC तक का सारा टेक्स्ट है
+        const fullRecord = cleanedRaw.substring(start, end).trim();
+        
         let voter = {};
         
-        // 1. EPIC_NO and PartNo को निकालें
-        const epicMatch = fullRecord.match(/(\w{7,})\s*(\d{1,3}\/\d{1,3}\/\d+)?/);
-        if (epicMatch) {
-            voter.EPIC_NO = epicMatch[1];
-            voter.PartNo = epicMatch[2] || 'NA';
-        } else {
-            return; 
-        }
+        // 1. EPIC_NO and PartNo को निकालें (यह मैच पहले ही हो चुका है)
+        voter.EPIC_NO = matches[i][1];
+        voter.PartNo = matches[i][2] || 'NA';
         
         // 2. Voter Name
         const nameMatch = fullRecord.match(/मतदा\s*\d*राचे पूर्ण\s*:\s*(.*?)\s*नांव/i);
@@ -194,8 +172,13 @@ function generateCSV() {
             voter.Gender || 'NA'
         ].join(',');
         output += row + '\n';
-    });
+    }
+
     // **************** पार्सिंग समाप्त ****************
+    if (serial === 1) { // यदि केवल हेडर ही बना है
+         outputElement.value = "❌ गंभीर त्रुटि: कोई रिकॉर्ड प्रोसेस नहीं हुआ। EPIC/PartNo पैटर्न सही नहीं है।";
+         return;
+    }
 
     outputElement.value = output;
     copyButton.disabled = false;
@@ -206,12 +189,9 @@ function generateCSV() {
 // =======================================================================
 function copyCSV() {
     const outputElement = document.getElementById('outputCSV');
-    
-    // CSV टेक्स्ट को चुनें
     outputElement.select();
     outputElement.setSelectionRange(0, 99999);
     
-    // टेक्स्ट को क्लिपबोर्ड पर कॉपी करें
     navigator.clipboard.writeText(outputElement.value).then(() => {
         const copyButton = document.getElementById('copyButton');
         copyButton.textContent = '✅ कॉपी हो गया!';
