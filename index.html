@@ -1,32 +1,10 @@
-<!DOCTYPE html>
-<html lang="hi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter List CSV Fixer</title>
-<style>
-body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
-h2 { text-align: center; }
-textarea { width: 100%; height: 250px; margin-bottom: 10px; padding: 10px; font-size: 14px; }
-button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-pre { background: #fff; padding: 10px; border: 1px solid #ccc; overflow-x: auto; white-space: pre-wrap; }
-</style>
-</head>
-<body>
-
-<h2>Voter List CSV Fixer</h2>
-<p>Raw text paste करें, फिर CSV generate करें:</p>
-<textarea id="inputText" placeholder="Raw voter text यहाँ paste करें"></textarea>
-<br>
-<button onclick="generateCSV()">CSV Generate करें</button>
-
-<h3>Output CSV:</h3>
-<pre id="outputCSV"></pre>
-
 <script>
 function generateCSV() {
     const raw = document.getElementById('inputText').value.trim();
-    if(!raw) { alert("Text डालें"); return; }
+    if (!raw) {
+        alert("Text डालें");
+        return;
+    }
 
     const lines = raw.split(/\r?\n/);
     const header = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
@@ -34,98 +12,122 @@ function generateCSV() {
     let serial = 1;
 
     let voter = {}; // temporary voter object
+    let pendingVoterName = ''; // For capturing name that appears before EPIC/PartNo
 
     function finalizeVoter() {
-        if(Object.keys(voter).length === 0) return;
-        const row = [
-            serial++,
-            voter.EPIC_NO || 'NA',
-            voter.PartNo || 'NA',
-            `"${voter.VoterName || 'NA'}"`,
-            voter.RelationName || 'NA',
-            voter.RelationType || 'NA',
-            voter.HouseNo || 'NA',
-            voter.Age || 'NA',
-            voter.Gender || 'NA'
-        ].join(',');
-        output += row + '\n';
+        // केवल तभी प्रोसेस करें जब EPIC_NO सेट हो
+        if (voter.EPIC_NO) {
+            // यदि VoterName सेट नहीं है, तो पेंडिंग नाम का उपयोग करें
+            if (!voter.VoterName && pendingVoterName) {
+                voter.VoterName = pendingVoterName;
+            }
+
+            const row = [
+                serial++,
+                voter.EPIC_NO || 'NA',
+                voter.PartNo || 'NA',
+                `"${voter.VoterName ? voter.VoterName.replace(/"/g, '""') : 'NA'}"`,
+                `"${voter.RelationName ? voter.RelationName.replace(/"/g, '""') : 'NA'}"`,
+                voter.RelationType || 'NA',
+                voter.HouseNo || 'NA',
+                voter.Age || 'NA',
+                voter.Gender || 'NA'
+            ].join(',');
+            output += row + '\n';
+        }
         voter = {}; // reset
+        pendingVoterName = ''; // reset pending name
     }
 
     lines.forEach(line => {
         line = line.trim();
-        if(!line || line.toLowerCase().includes('photo') || line.toLowerCase().includes('available')) return;
+        if (!line || line.toLowerCase().includes('photo') || line.toLowerCase().includes('available')) return;
+        
+        // मतदाता सीरियल नंबर को अनदेखा करें
+        if (/^\d+$/.test(line)) return; 
 
-        // EPIC_NO
-        const epicMatch = line.match(/RBG\d+/);
-        if(epicMatch) {
+        // 1. EPIC_NO (नई एंट्री की शुरुआत)
+        // EPIC_NO को किसी भी अल्फ़ान्यूमेरिक स्ट्रिंग के रूप में कैप्चर करें जिसके बाद पार्ट नंबर आता है
+        const epicMatch = line.match(/(\w+)\s+\d{1,3}\/\d{1,3}\/\d+/);
+        if (epicMatch) {
+            // पिछले वोटर को फाइनल करें
             finalizeVoter();
-            voter.EPIC_NO = epicMatch[0];
+
+            // नया वोटर शुरू करें
+            voter.EPIC_NO = epicMatch[1]; // EPIC_NO को कैप्चर करें
             const partMatch = line.match(/\d{1,3}\/\d{1,3}\/\d+/);
             voter.PartNo = partMatch ? partMatch[0] : 'NA';
+            
+            // यदि नाम EPIC लाइन पर है, तो उसे यहाँ कैप्चर करें (असंभव, लेकिन सुरक्षित)
+            if (line.includes('मतदाराचे पूर्ण')) {
+                 voter.VoterName = line.replace(/.*मतदाराचे पूर्ण\s*:\s*/, '').replace(/\w+\s+\d{1,3}\/\d{1,3}\/\d+/, '').trim();
+            }
             return;
         }
 
-        // Voter Name
-        if(line.includes('मतदाराचे पूर्ण:') || line.includes('मतदाराचे पूर्ण :')) {
-            voter.VoterName = line.replace(/मतदाराचे पूर्ण[:\s]+/,'').trim();
-            return;
+        // 2. Voter Name (मतदाराचे पूर्ण) - अव्यवस्थित टेक्स्ट को संभालना
+        const nameMatch = line.match(/मतदाराचे पूर्ण\s*:\s*(.*)/) || line.match(/मतदा\d+राचे पूर्ण\s*:\s*(.*)/);
+        if (nameMatch) {
+             const name = nameMatch[1].replace(/नांव\s*/, '').trim();
+             // यदि EPIC अभी तक सेट नहीं है, तो इसे पेंडिंग नाम के रूप में रखें
+             if (!voter.EPIC_NO) {
+                 pendingVoterName = name;
+             } else {
+                 voter.VoterName = name;
+             }
+             return;
         }
 
-        // Relation Name
-        if(line.includes('पतीचे नाव')) {
-            voter.RelationName = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
-            voter.RelationType = 'Husband';
-            return;
-        }
-        if(line.includes('वडिलांचे नाव')) {
-            voter.RelationName = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
-            voter.RelationType = 'Father';
-            return;
-        }
-        if(line.includes('आईचे नाव')) {
-            voter.RelationName = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
-            voter.RelationType = 'Mother';
-            return;
+        // 3. Relation Name & Type
+        const relationKeywords = {
+            'पतीचे नाव': 'Husband',
+            'वडिलांचे नाव': 'Father',
+            'आईचे नाव': 'Mother',
+            'इतर': 'Other' // Added support for 'इतर'
+        };
+
+        for (const keyword in relationKeywords) {
+            if (line.includes(keyword)) {
+                // कॉलन या pipe ( | ) के बाद नाम निकालें
+                const nameMatch = line.match(new RegExp(`${keyword}\\s*[|:]\\s*(.*)`));
+                if (nameMatch && nameMatch[1].trim()) {
+                    voter.RelationName = nameMatch[1].trim();
+                    voter.RelationType = relationKeywords[keyword];
+                    return;
+                }
+            }
         }
 
-        // House Number
-        if(line.includes('घर क्रमांक')) {
-            const hn = line.split(':')[1] ? line.split(':')[1].trim() : 'NA';
+        // 4. House Number (घर क्रमांक) - मल्टीलाइन हाउस नंबर को भी कैप्चर करने का प्रयास करें
+        const houseMatch = line.match(/घर क्रमांक\s*[:|]\s*(.*)/i);
+        if (houseMatch) {
+            const hn = houseMatch[1].trim();
             voter.HouseNo = hn !== '' ? hn : 'NA';
             return;
         }
 
-        // Age
-        if(line.includes('वय')) {
-            const ageMatch = line.match(/\d+/);
-            voter.Age = ageMatch ? ageMatch[0] : 'NA';
+        // 5. Age & Gender
+        // एक ही लाइन में "वय" और "लिंग" दोनों के लिए अधिक robust regex
+        const detailsMatch = line.match(/वय\s*:\s*(\d+).*लिंग\s*:\s*(पु|स्त्री|इतर)/);
+        if (detailsMatch) {
+            voter.Age = detailsMatch[1];
+            if (detailsMatch[2].includes('स्त्री')) voter.Gender = 'Female';
+            else if (detailsMatch[2].includes('पु')) voter.Gender = 'Male';
+            else voter.Gender = 'Other';
+            return;
+        }
+        
+        // 6. House Number Continuation (यदि घर क्रमांक अगली लाइन में जारी है)
+        if (voter.EPIC_NO && voter.HouseNo && voter.HouseNo === 'NA' && line.length > 5) {
+            voter.HouseNo = line;
             return;
         }
 
-        // Gender
-        if(line.includes('लिंग')) {
-            if(line.includes('स्त्री')) voter.Gender = 'Female';
-            else if(line.includes('पु')) voter.Gender = 'Male';
-            return;
-        }
-
-        // Sometimes line is just number (like 572, 573)
-        if(/^\d+$/.test(line)) {
-            voter.VoterName = line;
-            return;
-        }
-
-        // If voterName not set, take first meaningful text
-        if(!voter.VoterName) voter.VoterName = line;
     });
 
-    // Finalize last voter
+    // अंतिम वोटर को फाइनल करें
     finalizeVoter();
 
     document.getElementById('outputCSV').textContent = output;
 }
 </script>
-
-</body>
-</html>
