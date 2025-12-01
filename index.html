@@ -3,147 +3,148 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter List CSV Generator 🚀</title>
+<title>Voter CSV Generator 🔥</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #f7f7f7;
-    padding: 20px;
-  }
-  h2 {
-    text-align: center;
-    color: #333;
-  }
-  textarea {
-    width: 100%;
-    height: 300px;
-    padding: 10px;
-    margin-bottom: 15px;
-    font-size: 14px;
-    box-sizing: border-box;
-    resize: vertical;
-  }
-  .button-container {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-  button {
-    flex: 1;
-    padding: 12px;
-    font-size: 16px;
-    cursor: pointer;
-    border: none;
-    border-radius: 5px;
-    color: white;
-    transition: 0.3s;
-  }
-  #generateButton { background: #007bff; }
-  #generateButton:hover { background: #0056b3; }
-  #copyButton { background: #28a745; }
-  #copyButton:hover { background: #218838; }
-  #outputCSV {
-    width: 100%;
-    height: 300px;
-    padding: 10px;
-    font-family: Consolas, monospace;
-    font-size: 13px;
-    border: 1px solid #ddd;
-    box-sizing: border-box;
-    white-space: pre-wrap;
-  }
+body { font-family: Arial,sans-serif; background:#f7f7f7; padding:20px; }
+h2 { text-align:center; color:#333; }
+textarea { width:100%; height:300px; padding:10px; margin-bottom:15px; font-size:14px; box-sizing:border-box; resize: vertical; }
+.button-container { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+button { flex:1; padding:12px; font-size:16px; cursor:pointer; border:none; border-radius:5px; color:white; transition:.3s; }
+#generateButton { background:#007bff; } #generateButton:hover { background:#0056b3; }
+#copyButton { background:#28a745; } #copyButton:hover { background:#218838; }
+#outputCSV { width:100%; height:300px; padding:10px; font-family:Consolas,monospace; font-size:13px; border:1px solid #ddd; box-sizing:border-box; white-space:pre-wrap; }
 </style>
 </head>
 <body>
 
 <h2>Voter List CSV Generator 🚀</h2>
-<p>अपना raw voter text यहाँ paste करें:</p>
+<p>Raw voter text paste करें:</p>
 <textarea id="inputText" placeholder="Raw voter text paste करें..."></textarea>
 
 <div class="button-container">
-  <button id="generateButton">CSV Generate करें</button>
-  <button id="copyButton" disabled>📋 Copy CSV</button>
+<button id="generateButton">CSV Generate करें</button>
+<button id="copyButton" disabled>📋 Copy CSV</button>
 </div>
 
 <h3>Generated CSV:</h3>
 <textarea id="outputCSV" readonly placeholder="CSV output यहाँ दिखेगा..."></textarea>
 
 <script>
-function parseVoterText(text) {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l !== "");
-  const csvRows = [];
-  const header = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
-  csvRows.push(header.join(","));
+function smartParseVoterText(text){
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l!=="");
+    const csvRows = [];
+    const header = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
+    csvRows.push(header.join(","));
 
-  let serialNo = 1;
+    let serialNo=1;
+    let current = {};
 
-  for(let i=0; i<lines.length; i++){
-    const line = lines[i];
+    for(let i=0;i<lines.length;i++){
+        let line = lines[i];
 
-    // Basic EPIC_NO + PartNo pattern detection
-    const epicMatch = line.match(/([A-Z]{2,3}\d+)\s+(\d+\/\d+\/\d+)/);
-    if(epicMatch){
-      const EPIC_NO = epicMatch[1];
-      const PartNo = epicMatch[2];
-
-      // Look back and ahead to find VoterName, RelationName, RelationType, HouseNo, Age, Gender
-      let voterName = "", relationName = "", relationType = "", houseNo = "", age = "", gender = "";
-
-      // Scan previous 2 lines for voter name
-      for(let j = i-2; j<=i+2; j++){
-        if(lines[j]){
-          const l = lines[j];
-          if(/मतदाराचे पूर्ण:|नांव|Photo|Voter/.test(l) && !voterName){
-            voterName = l.replace(/मतदाराचे पूर्ण:|नांव|Photo|Available/gi,"").trim();
-          }
-          if(/वडिलांचे नाव|पतीचे नाव|आईचे नाव/.test(l) && !relationName){
-            relationName = l.replace(/वडिलांचे नाव|पतीचे नाव|आईचे नाव|Available/gi,"").trim();
-            if(/वडिल/.test(l)) relationType="Father";
-            else if(/पती/.test(l)) relationType="Husband";
-            else if(/आई/.test(l)) relationType="Mother";
-          }
-          if(/घर क्रमांक/.test(l) && !houseNo){
-            houseNo = l.replace(/घर क्रमांक[:]?/,"").trim();
-          }
-          if(/वय\s*[:]?/.test(l) && !age){
-            const ageMatch = l.match(/वय\s*[:]? (\d+)/);
-            if(ageMatch) age = ageMatch[1];
-          }
-          if(/लिंग/.test(l) && !gender){
-            if(/स्त्री/.test(l)) gender="Female";
-            else if(/पु/.test(l)) gender="Male";
-          }
+        // EPIC_NO + PartNo detection
+        let epicMatch = line.match(/([A-Z]{2,3}\d+)\s+(\d+\/\d+\/\d+)/);
+        if(epicMatch){
+            // Save previous voter
+            if(current.EPIC_NO) {
+                csvRows.push([
+                    serialNo,
+                    current.EPIC_NO || "NA",
+                    current.PartNo || "NA",
+                    current.VoterName || "NA",
+                    current.RelationName || "NA",
+                    current.RelationType || "NA",
+                    current.HouseNo || "NA",
+                    current.Age || "NA",
+                    current.Gender || "NA"
+                ].join(","));
+                serialNo++;
+            }
+            // Start new voter
+            current = {
+                EPIC_NO: epicMatch[1],
+                PartNo: epicMatch[2],
+                VoterName: "",
+                RelationName: "",
+                RelationType: "",
+                HouseNo: "",
+                Age: "",
+                Gender: ""
+            };
+            continue;
         }
-      }
 
-      csvRows.push([serialNo,EPIC_NO,PartNo,voterName||"NA",relationName||"NA",relationType||"NA",houseNo||"NA",age||"NA",gender||"NA"].join(","));
-      serialNo++;
+        // Voter Name
+        if(/मतदाराचे पूर्ण:|नांव/.test(line)){
+            current.VoterName = line.replace(/मतदाराचे पूर्ण:|नांव|Photo|Available/gi,"").trim() || current.VoterName;
+        }
+
+        // Relation Name & Type
+        if(/वडिलांचे नाव/.test(line)){
+            current.RelationName = line.replace(/वडिलांचे नाव|Available/gi,"").trim();
+            current.RelationType = "Father";
+        } else if(/पतीचे नाव/.test(line)){
+            current.RelationName = line.replace(/पतीचे नाव|Available/gi,"").trim();
+            current.RelationType = "Husband";
+        } else if(/आईचे नाव/.test(line)){
+            current.RelationName = line.replace(/आईचे नाव|Available/gi,"").trim();
+            current.RelationType = "Mother";
+        }
+
+        // HouseNo
+        if(/घर क्रमांक/.test(line)){
+            current.HouseNo = line.replace(/घर क्रमांक[:]?/,"").trim();
+        }
+
+        // Age
+        if(/वय/.test(line)){
+            let m = line.match(/वय[:]? (\d+)/);
+            if(m) current.Age = m[1];
+        }
+
+        // Gender
+        if(/लिंग/.test(line)){
+            if(/स्त्री/.test(line)) current.Gender="Female";
+            else if(/पु/.test(line)) current.Gender="Male";
+        }
     }
-  }
 
-  return csvRows.join("\n");
+    // Last voter
+    if(current.EPIC_NO){
+        csvRows.push([
+            serialNo,
+            current.EPIC_NO || "NA",
+            current.PartNo || "NA",
+            current.VoterName || "NA",
+            current.RelationName || "NA",
+            current.RelationType || "NA",
+            current.HouseNo || "NA",
+            current.Age || "NA",
+            current.Gender || "NA"
+        ].join(","));
+    }
+
+    return csvRows.join("\n");
 }
 
-document.getElementById("generateButton").addEventListener("click", ()=>{
-  const inputText = document.getElementById("inputText").value;
-  if(!inputText.trim()){
-    alert("कृपया raw voter text paste करें!");
-    return;
-  }
-  const csvOutput = parseVoterText(inputText);
-  document.getElementById("outputCSV").value = csvOutput;
-  document.getElementById("copyButton").disabled = false;
+document.getElementById("generateButton").addEventListener("click",()=>{
+    const inputText = document.getElementById("inputText").value;
+    if(!inputText.trim()){
+        alert("कृपया raw voter text paste करें!");
+        return;
+    }
+    const csvOutput = smartParseVoterText(inputText);
+    document.getElementById("outputCSV").value = csvOutput;
+    document.getElementById("copyButton").disabled=false;
 });
 
-document.getElementById("copyButton").addEventListener("click", ()=>{
-  const output = document.getElementById("outputCSV");
-  output.select();
-  output.setSelectionRange(0, 99999);
-  document.execCommand("copy");
-  alert("CSV copied to clipboard! 📋");
+document.getElementById("copyButton").addEventListener("click",()=>{
+    const output = document.getElementById("outputCSV");
+    output.select();
+    output.setSelectionRange(0,99999);
+    document.execCommand("copy");
+    alert("CSV clipboard में copy हो गया! 📋");
 });
 </script>
-
 </body>
 </html>
