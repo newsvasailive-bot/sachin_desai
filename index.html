@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter List CSV Fixer - Final Working</title>
+<title>Voter List CSV Fixer - Fixed Header</title>
 <style>
 body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
 h2 { text-align: center; color: #333; }
@@ -34,13 +34,13 @@ textarea {
     width: 100%;
 }
 #generateButton {
-    background-color: #dc3545; 
+    background-color: #007bff; /* नीला */
     color: white;
 }
-#generateButton:hover { background-color: #c82333; }
+#generateButton:hover { background-color: #0056b3; }
 
 #copyButton {
-    background-color: #28a745; 
+    background-color: #28a745; /* हरा */
     color: white;
 }
 #copyButton:hover { background-color: #218838; }
@@ -59,7 +59,7 @@ textarea {
 </head>
 <body>
 
-<h2>Voter List CSV Fixer ✅ (Working Logic)</h2>
+<h2>Voter List CSV Fixer 📋 (Header Fixed)</h2>
 <p>Raw voter text यहाँ paste करें:</p>
 <textarea id="inputText" placeholder="कच्चा टेक्स्ट यहाँ पेस्ट करें"></textarea>
 
@@ -73,8 +73,10 @@ textarea {
 
 <script>
 // =======================================================================
-// CSV GENERATION LOGIC (Looping and Matching)
+// CSV GENERATION LOGIC (Header Fixed)
 // =======================================================================
+const FIXED_HEADER = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
+
 function generateCSV() {
     const raw = document.getElementById('inputText').value.trim();
     const outputElement = document.getElementById('outputCSV');
@@ -83,40 +85,37 @@ function generateCSV() {
     copyButton.disabled = true;
 
     if (!raw) {
-        outputElement.value = "❌ त्रुटि: कृपया टेक्स्ट डालें।";
+        outputElement.value = FIXED_HEADER + '\n' + "❌ त्रुटि: कृपया टेक्स्ट डालें।";
         return;
     }
 
     // 1. डेटा को साफ़ करें और एक सिंगल स्ट्रिंग में समेटें
     const cleanedRaw = raw.replace(/\|\s*/g, ' ').replace(/\n/g, ' ');
     
-    // 2. सभी EPIC पैटर्न को खोजने के लिए RegEx
-    // यह RegEx पूरे रिकॉर्ड को अलग करने के लिए इस्तेमाल होगा।
+    // 2. सभी EPIC पैटर्न को खोजने के लिए RegEx (सबसे लचीला)
     const recordSeparatorRegex = /(\w{7,})\s*(\d{1,3}\/\d{1,3}\/\d+)?/g; 
 
-    // RegEx का उपयोग करके सभी EPIC नंबरों के इंडेक्स (Index) प्राप्त करें
     let matches = [...cleanedRaw.matchAll(recordSeparatorRegex)];
     
+    // यदि कोई रिकॉर्ड नहीं मिला, तो केवल हेडर और त्रुटि संदेश दिखाएँ
     if (matches.length === 0) {
-        outputElement.value = "❌ त्रुटि: विभाजन विफल। कोई EPIC पैटर्न ('RBG1234567') नहीं मिला।";
+        outputElement.value = FIXED_HEADER + '\n' + "❌ गंभीर त्रुटि: कोई EPIC पैटर्न ('RBG1234567') टेक्स्ट में नहीं मिला।";
         return;
     }
     
-    const header = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
-    let output = header + '\n';
+    let output = FIXED_HEADER + '\n';
     let serial = 1;
 
-    // 3. डेटा को प्रोसेस करें (प्रत्येक EPIC मैच पर लूप करें)
+    // 3. डेटा को प्रोसेस करें
     for (let i = 0; i < matches.length; i++) {
         const start = matches[i].index;
         const end = (i + 1 < matches.length) ? matches[i+1].index : cleanedRaw.length;
         
-        // यह 'fullRecord' एक EPIC से शुरू होकर अगले EPIC तक का सारा टेक्स्ट है
         const fullRecord = cleanedRaw.substring(start, end).trim();
         
         let voter = {};
         
-        // 1. EPIC_NO and PartNo को निकालें (यह मैच पहले ही हो चुका है)
+        // 1. EPIC_NO and PartNo
         voter.EPIC_NO = matches[i][1];
         voter.PartNo = matches[i][2] || 'NA';
         
@@ -172,12 +171,6 @@ function generateCSV() {
             voter.Gender || 'NA'
         ].join(',');
         output += row + '\n';
-    }
-
-    // **************** पार्सिंग समाप्त ****************
-    if (serial === 1) { // यदि केवल हेडर ही बना है
-         outputElement.value = "❌ गंभीर त्रुटि: कोई रिकॉर्ड प्रोसेस नहीं हुआ। EPIC/PartNo पैटर्न सही नहीं है।";
-         return;
     }
 
     outputElement.value = output;
