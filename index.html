@@ -3,6 +3,89 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voter CSV Fixer</title>
+<style>
+body { font-family: Arial; background: #f7f7f7; padding: 20px; }
+h2 { text-align: center; }
+textarea { width: 100%; height: 250px; margin-bottom: 10px; padding: 10px; font-size: 14px; }
+button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+pre { background: #fff; padding: 10px; border: 1px solid #ccc; overflow-x: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<h2>Voter List CSV Converter</h2>
+<p>Raw text paste करें, फिर CSV generate करें:</p>
+<textarea id="inputText" placeholder="Raw voter text यहाँ paste करें"></textarea>
+<br>
+<button onclick="generateCSV()">CSV Generate करें</button>
+
+<h3>Output CSV:</h3>
+<pre id="outputCSV"></pre>
+
+<script>
+function generateCSV() {
+    const raw = document.getElementById('inputText').value.trim();
+    if(!raw) { alert("Text डालें"); return; }
+
+    const lines = raw.split(/\r?\n/);
+    const header = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
+    let output = header + '\n';
+    let serial = 1;
+
+    lines.forEach(line => {
+        if(!line.trim()) return;
+
+        // Remove unnecessary "|" and extra spaces
+        line = line.replace(/^\|/,'').trim();
+
+        // Extract Age
+        let ageMatch = line.match(/वय\s*[:]?[\s०-९]+/);
+        let age = ageMatch ? ageMatch[0].replace(/[^0-9]/g,'') : 'NA';
+
+        // Extract Gender
+        let gender = 'NA';
+        if(line.includes('लिंग : स्त्री')) gender = 'Female';
+        else if(line.includes('लिंग : पु')) gender = 'Male';
+
+        // Extract VoterName (default first part of line)
+        let name = line.replace(/(वय\s*[:]?.*|लिंग\s*:.*)/g,'').trim();
+        if(!name) name = 'NA';
+
+        // Set placeholders for other columns
+        const epic = line.match(/RBG[0-9]+/) ? line.match(/RBG[0-9]+/)[0] : 'EPIC_NO';
+        const partNo = line.match(/\d{1,3}\/\d{1,3}\/\d+/) ? line.match(/\d{1,3}\/\d{1,3}\/\d+/)[0] : 'PART_NO';
+        const relationName = 'RelationName';
+        const relationType = 'RelationType';
+        const houseNo = 'NA';
+
+        const row = [
+            serial,
+            epic,
+            partNo,
+            `"${name}"`,
+            relationName,
+            relationType,
+            houseNo,
+            age,
+            gender
+        ].join(',');
+
+        output += row + '\n';
+        serial++;
+    });
+
+    document.getElementById('outputCSV').textContent = output;
+}
+</script>
+
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Voter List CSV Fixer</title>
 <style>
   body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
