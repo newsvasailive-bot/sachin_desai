@@ -6,42 +6,47 @@
 <title>Voter List Parser & Downloader (Offline)</title>
 
 <style>
-/* Styling for better appearance */
+/* Styling for better appearance and usability */
 body { font-family: Arial, sans-serif; padding:20px; background:#f9f9f9; }
-textarea { width:100%; height:200px; margin-bottom:10px; border: 1px solid #ccc; padding: 10px; box-sizing: border-box; resize: vertical; }
-button { padding:10px 20px; margin:5px 5px 5px 0; cursor:pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; transition: background-color 0.3s; }
+textarea { width:100%; height:250px; margin-bottom:15px; border: 1px solid #ccc; padding: 12px; box-sizing: border-box; resize: vertical; font-size: 14px; }
+button { padding:12px 25px; margin:5px 5px 5px 0; cursor:pointer; background-color: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; transition: background-color 0.3s; }
 button:hover { background-color: #0056b3; }
-pre { background:#eee; padding:10px; overflow-x:auto; white-space: pre-wrap; border: 1px solid #ddd; border-radius: 4px; }
-h2, h3 { color: #333; }
+pre { background:#eee; padding:15px; overflow-x:auto; white-space: pre-wrap; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 20px; font-size: 12px; }
+h2, h3 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
+.output-section { margin-top: 20px; }
 </style>
 </head>
 <body>
 
-<h2>🗳️ वोटर लिस्ट पार्सर और डाउनलोडर (ऑफलाइन)</h2>
+<h2>📝 वोटर लिस्ट पार्सर और डाउनलोडर (ऑफलाइन)</h2>
 
 <p>कच्चा (Raw) वोटर लिस्ट टेक्स्ट यहाँ पेस्ट करें:</p>
 <textarea id="voterText" placeholder="कृपया अपना अव्यवस्थित टेक्स्ट यहाँ पेस्ट करें..."></textarea>
 <br>
 
-<button onclick="parseVoters()">1. Parse to CSV & JSON</button>
-<button onclick="downloadCSV()">2. Download CSV</button>
-<button onclick="downloadJSON()">3. Download JSON</button>
+<button onclick="parseVoters()">1. Parse (CSV & JSON बनाएँ)</button>
+<button onclick="downloadCSV()">2. CSV डाउनलोड करें</button>
+<button onclick="downloadJSON()">3. JSON डाउनलोड करें</button>
 
-<h3>CSV Output:</h3>
-<pre id="csvOutput">CSV डेटा यहाँ दिखाई देगा...</pre>
+<div class="output-section">
+    <h3>CSV Output:</h3>
+    <pre id="csvOutput">CSV डेटा यहाँ दिखाई देगा...</pre>
+</div>
 
-<h3>JSON Output:</h3>
-<pre id="jsonOutput">JSON डेटा यहाँ दिखाई देगा...</pre>
+<div class="output-section">
+    <h3>JSON Output:</h3>
+    <pre id="jsonOutput">JSON डेटा यहाँ दिखाई देगा...</pre>
+</div>
 
 <script>
 let voters = []; 
 
 /**
- * पाठ से अनावश्यक शब्द और फॉर्मेटिंग हटाता है।
+ * पाठ से अनावश्यक लेबल और फॉर्मेटिंग हटाता है (नाम और पता साफ़ करने के लिए)।
  */
 function cleanText(str) {
     if(!str) return '';
-    // सभी अनावश्यक लेबल (जैसे नांव, Photo, etc.) और अंक (नियमित और हिंदी दोनों) हटाएँ
+    // सभी अनावश्यक लेबल (जैसे नांव, Photo, आदि) और अंक (नियमित और हिंदी दोनों) हटाता है।
     return str.replace(/(नांव|Available|Photo|मतदाराचे|उपलब्ध|पूर्ण|पतीचे|वडिलांचे|आईचे|नाव|:|इतर)\s*|\d+|[०-९]+/gi, '')
               .replace(/\|\s*/g, '')
               .replace(/\r?\n/g, ' ')
@@ -50,7 +55,7 @@ function cleanText(str) {
 }
 
 /**
- * कच्चे पाठ को पार्स करता है और CSV/JSON में आउटपुट करता है।
+ * कच्चे पाठ को पार्स करता है।
  */
 function parseVoters() {
     const text = document.getElementById('voterText').value;
@@ -62,11 +67,10 @@ function parseVoters() {
     voters = [];
     let serial = 1;
 
-    // 1. टेक्स्ट को तैयार करें: सभी लाइन ब्रेक्स को स्पेस से बदलें, पाइप और अतिरिक्त स्पेस हटाएँ।
+    // 1. टेक्स्ट को तैयार करें: लाइन ब्रेक्स, पाइप और अतिरिक्त स्पेस हटाएँ।
     const fullText = text.replace(/\r?\n/g, ' ').replace(/\|\s*/g, ' ').replace(/\s+/g, ' ');
 
     // 2. 🎯 EPIC के आधार पर पूरे डेटा को विभाजित करें। (RBG1234567 या MRL...)
-    // EPIC को कैप्चर करता है (यह सबसे मज़बूत विभाजन बिंदु है)
     const epicBlocks = fullText.split(/([A-Z]{2,}\d{6,}[A-Z]{0,})/);
 
     // 3. पहले खाली ब्लॉक को हटा दें (यदि मौजूद हो)
@@ -80,14 +84,12 @@ function parseVoters() {
         const epicNo = epicBlocks[i].trim();
         const dataAfterEpic = epicBlocks[i+1] ? epicBlocks[i+1].trim() : '';
         const block = epicNo + " " + dataAfterEpic;
-        
+
         if (!block.trim()) continue; 
 
         // EPIC और PartNo को ब्लॉक की शुरुआत से एक्सट्रेक्ट करें
-        // PartNo (जैसे 131/272/587) EPIC के ठीक बाद, भले ही बीच में स्पेस हो।
         const epicMatch = block.match(/([A-Z]{2,}\d{6,}[A-Z]{0,})\s*([\d\/]+)/);
         
-        // यदि EPIC और PartNo दोनों नहीं मिले, तो रिकॉर्ड छोड़ दें
         if (!epicMatch || !epicMatch[1]) continue; 
 
         let currentVoterData = {
@@ -123,7 +125,6 @@ function parseVoters() {
         // Age:
         const ageMatch = block.match(/वय\s*:\s*(\d+|[०-९]+)/);
         if(ageMatch) {
-            // हिंदी अंकों को हटाने का काम cleanText में किया गया है, यहां सिर्फ़ पार्स करें
             currentVoterData.Age = ageMatch[1]; 
         }
 
@@ -158,17 +159,17 @@ function parseVoters() {
     document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
     
     if (voters.length > 0) {
-        alert(`${voters.length} मतदाता रिकॉर्ड सफलतापूर्वक पार्स किए गए। अब आप डेटा डाउनलोड कर सकते हैं।`);
+        alert(`✅ ${voters.length} मतदाता रिकॉर्ड सफलतापूर्वक पार्स किए गए। अब आप डेटा डाउनलोड कर सकते हैं।`);
     } else {
-        alert("कोई मतदाता रिकॉर्ड नहीं मिला। कृपया सुनिश्चित करें कि EPIC नंबर और फॉर्मेट सही है।");
+        alert("❌ कोई मतदाता रिकॉर्ड नहीं मिला। कृपया सुनिश्चित करें कि EPIC नंबर और फॉर्मेट सही है।");
     }
 }
 
-// ===== Download Functions (Unchanged) =====
+// ===== Download Functions =====
 function downloadCSV() {
     const csvContent = document.getElementById('csvOutput').textContent;
     if (!csvContent || csvContent.includes('CSV डेटा यहाँ दिखाई देगा')) {
-        alert("पहले 'Parse to CSV & JSON' बटन दबाकर डेटा को Parse करें।");
+        alert("पहले 'Parse (CSV & JSON बनाएँ)' बटन दबाकर डेटा को पार्स करें।");
         return;
     }
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -181,7 +182,7 @@ function downloadCSV() {
 function downloadJSON() {
     const jsonContent = document.getElementById('jsonOutput').textContent;
     if (!jsonContent || jsonContent.includes('JSON डेटा यहाँ दिखाई देगा')) {
-        alert("पहले 'Parse to CSV & JSON' बटन दबाकर डेटा को Parse करें।");
+        alert("पहले 'Parse (CSV & JSON बनाएँ)' बटन दबाकर डेटा को पार्स करें।");
         return;
     }
     const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
