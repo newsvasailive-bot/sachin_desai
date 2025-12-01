@@ -3,24 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voter CSV Generator 🚀</title>
+<title>Messy Voter Data → CSV</title>
 <style>
-body { font-family: Arial,sans-serif; background:#f7f7f7; padding:20px; }
-h2 { text-align:center; color:#333; }
-textarea { width:100%; height:300px; padding:10px; font-size:14px; margin-bottom:15px; box-sizing:border-box; resize: vertical; }
-.button-container { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
-button { flex:1; padding:12px; font-size:16px; cursor:pointer; border:none; border-radius:5px; color:white; transition:.3s; }
-#generateButton { background:#007bff; } #generateButton:hover { background:#0056b3; }
-#copyButton { background:#28a745; } #copyButton:hover { background:#218838; }
-#downloadButton { background:#ffc107; color:#000; } #downloadButton:hover { background:#e0a800; }
-#outputCSV { width:100%; height:300px; padding:10px; font-family:Consolas,monospace; font-size:13px; border:1px solid #ddd; box-sizing:border-box; white-space:pre-wrap; }
+body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+h2 { text-align: center; color: #333; }
+textarea { width: 100%; height: 300px; padding: 10px; margin-bottom: 15px; font-size: 14px; resize: vertical; }
+.button-container { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+button { flex: 1; padding: 12px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; color: white; transition: .3s; }
+#generateButton { background: #007bff; } #generateButton:hover { background: #0056b3; }
+#copyButton { background: #28a745; } #copyButton:hover { background: #218838; }
+#downloadButton { background: #ffc107; color: #000; } #downloadButton:hover { background: #e0a800; }
+#outputCSV { width:100%; height:300px; padding:10px; font-family: Consolas, monospace; font-size:13px; border:1px solid #ddd; box-sizing:border-box; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 
-<h2>Voter CSV Generator 🚀</h2>
-<p>Raw voter text यहाँ paste करें:</p>
-<textarea id="inputText" placeholder="Raw voter text paste करें..."></textarea>
+<h2>Messy Voter Data → CSV 🚀</h2>
+<textarea id="inputText" placeholder="Raw messy voter text paste करें..."></textarea>
 
 <div class="button-container">
 <button id="generateButton">CSV Generate करें</button>
@@ -32,23 +31,132 @@ button { flex:1; padding:12px; font-size:16px; cursor:pointer; border:none; bord
 <textarea id="outputCSV" readonly placeholder="CSV output यहाँ दिखेगा..."></textarea>
 
 <script>
-function generateCSV(text){
+// Helper function to quote fields with comma or quotes
+function quoteCSVField(field){
+    if(!field) field = "NA";
+    field = field.toString().trim();
+    if(field.includes(",") || field.includes('"') || field.includes("\n")){
+        field = '"' + field.replace(/"/g,'""') + '"';
+    }
+    return field;
+}
+
+function generateCSVFromMessyText(text){
     const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l!=="");
     const csvRows = [];
     const header = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
     csvRows.push(header.join(","));
 
-    for(let line of lines){
-        // Skip empty lines
-        if(!line) continue;
+    let currentSerial = "";
+    let currentEPIC = "";
+    let currentPart = "";
+    let voterName = "";
+    let relationName = "";
+    let relationType = "";
+    let houseNo = "";
+    let age = "";
+    let gender = "";
 
-        // Split by commas (already comma separated)
-        const parts = line.split(",");
-        // Ensure exactly 9 columns
-        while(parts.length<9) parts.push("NA");
-        // Add quotes if field contains comma
-        const safeParts = parts.map(p=>p.includes(",") || p.includes('"') ? `"${p.replace(/"/g,'""')}"` : p);
-        csvRows.push(safeParts.join(","));
+    for(let line of lines){
+        // Check if line starts with SerialNo (number)
+        const serialMatch = line.match(/^(\d{1,4})\s*[, ]/);
+        if(serialMatch){
+            // Push previous voter if exists
+            if(currentSerial || voterName){
+                csvRows.push([
+                    quoteCSVField(currentSerial),
+                    quoteCSVField(currentEPIC),
+                    quoteCSVField(currentPart),
+                    quoteCSVField(voterName),
+                    quoteCSVField(relationName),
+                    quoteCSVField(relationType),
+                    quoteCSVField(houseNo),
+                    quoteCSVField(age),
+                    quoteCSVField(gender)
+                ].join(","));
+            }
+            // Reset fields
+            currentSerial = serialMatch[1];
+            currentEPIC = "";
+            currentPart = "";
+            voterName = "";
+            relationName = "";
+            relationType = "";
+            houseNo = "";
+            age = "";
+            gender = "";
+            // Extract EPIC_NO and PartNo if present
+            const epcMatch = line.match(/(RBG\d{7,8})\s*(\d{1,3}\/\d{1,3}\/\d{1,3})?/);
+            if(epcMatch){
+                currentEPIC = epcMatch[1];
+                currentPart = epcMatch[2] || "";
+            }
+            // Try to extract voterName
+            const nameMatch = line.match(/\d{1,3}\s*(मतदाराचे पूर्ण:)?\s*(.*)/i);
+            if(nameMatch){
+                voterName = nameMatch[2].trim();
+            }
+            continue;
+        }
+
+        // Lines with EPIC_NO or PartNo
+        if(line.startsWith("RBG")){
+            const parts = line.split(" ");
+            currentEPIC = parts[0].trim();
+            currentPart = parts.slice(1).join(" ").trim();
+            continue;
+        }
+
+        // Lines containing voter name
+        if(line.toLowerCase().includes("मतदाराचे पूर्ण") || line.match(/^\|/)){
+            voterName = line.replace(/.*मतदाराचे पूर्ण:?\s*/i,"").trim();
+            continue;
+        }
+
+        // Relation
+        if(line.toLowerCase().includes("आईचे नाव") || line.toLowerCase().includes("पतीचे नाव") || line.toLowerCase().includes("वडिलांचे नाव")){
+            relationName = line.split(":")[1]?.trim() || "";
+            if(line.toLowerCase().includes("आईचे नाव")) relationType="Mother";
+            else if(line.toLowerCase().includes("पतीचे नाव")) relationType="Husband";
+            else if(line.toLowerCase().includes("वडिलांचे नाव")) relationType="Father";
+            continue;
+        }
+
+        // Age
+        if(line.toLowerCase().includes("वय")){
+            age = line.replace(/वय\s*:\s*/i,"").trim();
+            continue;
+        }
+
+        // Gender
+        if(line.toLowerCase().includes("लिंग")){
+            const g = line.replace(/.*लिंग\s*:\s*/i,"").trim();
+            if(g.includes("स्त्री")) gender="Female";
+            else if(g.includes("पुरू")) gender="Male";
+            else gender = g;
+            continue;
+        }
+
+        // HouseNo
+        if(line.toLowerCase().includes("घर क्रमांक")){
+            houseNo = line.replace(/.*घर क्रमांक\s*:?/i,"").trim();
+            continue;
+        }
+    }
+
+    // Push last record
+    if(currentSerial || voterName){
+        csvRows.push([
+            quoteCSVField(currentSerial),
+            quoteCSVField(currentEPIC),
+            quoteCSVField(currentPart),
+            quoteCSVField(voterName),
+            quoteCSVField(relationName),
+            quoteCSVField(relationType),
+            quoteCSVField(houseNo),
+            quoteCSVField(age),
+            quoteCSVField(gender)
+        ].join(","));
     }
 
     return csvRows.join("\n");
@@ -57,7 +165,7 @@ function generateCSV(text){
 document.getElementById("generateButton").addEventListener("click", ()=>{
     const input = document.getElementById("inputText").value;
     if(!input.trim()){ alert("Raw voter text paste करें!"); return; }
-    const csv = generateCSV(input);
+    const csv = generateCSVFromMessyText(input);
     document.getElementById("outputCSV").value = csv;
     document.getElementById("copyButton").disabled = false;
     document.getElementById("downloadButton").disabled = false;
