@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voter List Auto Extractor</title>
+<title>Voter List Auto Extractor (Robust)</title>
 <style>
 body { font-family: Arial; background:#f9f9f9; padding:20px; }
 textarea { width:100%; height:250px; padding:10px; font-size:14px; }
@@ -14,7 +14,7 @@ th { background:#333; color:#fff; }
 </head>
 <body>
 
-<h2>Voter List Auto Extractor</h2>
+<h2>Voter List Auto Extractor (Robust)</h2>
 
 <textarea id="input" placeholder="Yahan poora voter list paste karein..."></textarea><br>
 <button onclick="extract()">Extract & Show</button>
@@ -45,42 +45,54 @@ function extract() {
     tbody.innerHTML = "";
     let results = [];
 
-    let serial = 1;
-    let voterID = "", partNo = "", name = "", relName = "", relType = "", house = "", age = "", gender = "";
+    let serial = "", voterID = "", partNo = "", name = "", relName = "", relType = "", house = "", age = "", gender = "";
 
     lines.forEach(line => {
         line = line.trim();
+        if (!line) return;
+
+        // SerialNo
+        if (/^\d+$/.test(line)) {
+            serial = line;
+            return;
+        }
 
         // EPIC + Part
         if (/^[A-Z]{3}\d{7}/.test(line)) {
             let parts = line.split(" ");
             voterID = parts[0];
             partNo = parts[1] || "";
+            return;
         }
 
         // Name
         if (line.includes("मतदाराचे पूर्ण") || line.includes("नांव")) {
             name = line.replace(/.*[: ]/, "").trim();
+            return;
         }
 
         // Father / Husband
         if (line.includes("वडिलांचे नाव")) {
             relName = line.replace(/.*:/, "").trim();
             relType = "Father";
+            return;
         }
         if (line.includes("पतीचे नाव")) {
             relName = line.replace(/.*:/, "").trim();
             relType = "Husband";
+            return;
         }
 
         // HouseNo
         if (line.includes("घर क्रमांक")) {
             house = line.replace(/.*:/, "").trim();
+            return;
         }
 
         // Age
         if (line.includes("वय")) {
             age = line.replace(/.*:/, "").trim();
+            return;
         }
 
         // Gender
@@ -89,18 +101,10 @@ function extract() {
 
             // Push record
             results.push({
-                serial: serial++,
-                voterID,
-                partNo,
-                name,
-                relName,
-                relType,
-                house,
-                age,
-                gender
+                serial, voterID, partNo, name, relName, relType, house, age, gender
             });
 
-            // Reset temp vars
+            // Reset temp vars except SerialNo for next
             voterID = partNo = name = relName = relType = house = age = gender = "";
         }
     });
@@ -129,7 +133,7 @@ function downloadCSV() {
 
     let csv = "SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender\n";
     window.extracted.forEach(r => {
-        csv += `${r.serial},${r.voterID},${r.partNo},${r.name},${r.relName},${r.relType},${r.house},${r.age},${r.gender}\n`;
+        csv += `${r.serial || ""},${r.voterID || ""},${r.partNo || ""},${r.name || ""},${r.relName || ""},${r.relType || ""},${r.house || ""},${r.age || ""},${r.gender || ""}\n`;
     });
 
     let blob = new Blob([csv], { type: "text/csv" });
