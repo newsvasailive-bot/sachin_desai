@@ -1,309 +1,68 @@
-<!doctype html>
-<html lang="hi">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PDF → Text → CSV Converter</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Roboto, "Noto Sans", Arial; margin: 0; padding: 18px; background: #f6f8fb; color:#111; }
-    .wrap { max-width: 980px; margin: 12px auto; background: #fff; border-radius: 10px; padding: 18px; box-shadow: 0 6px 30px rgba(20,30,60,0.08); }
-    h1 { margin: 0 0 10px 0; font-size: 22px; }
-    p.lead { margin: 6px 0 16px 0; color:#444; }
-    .row { display:flex; gap:12px; flex-wrap:wrap; }
-    .col { flex:1 1 300px; min-width: 260px; }
-    label { font-size:13px; display:block; margin-bottom:6px; color:#333; }
-    input[type=file] { display:block; }
-    textarea { width:100%; min-height: 180px; resize:vertical; padding:10px; border-radius:8px; border:1px solid #ddd; font-family: monospace; font-size:13px; }
-    .controls { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-    button { background:#2563eb; color:white; border:0; padding:10px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
-    button.secondary { background:#6b7280; }
-    .small { font-size:13px; padding:8px 10px; }
-    .options { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .note { font-size:13px; color:#555; margin-top:10px; }
-    .out { background:#0f172a; color:#fff; padding:10px; border-radius:8px; font-size:13px; white-space:pre-wrap; max-height:260px; overflow:auto; }
-    footer { margin-top:14px; font-size:13px; color:#666; text-align:right; }
-    .inline { display:inline-block; vertical-align:middle; }
-  </style>
-  <!-- PDF.js CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF to CSV Converter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+<style>
+body { font-family: Arial; margin:20px; }
+#result { white-space: pre-wrap; background:#f1f1f1; padding:15px; margin-top:10px; }
+button { padding:10px 15px; margin:10px 0; }
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>PDF → Text → CSV Converter</h1>
-    <p class="lead">PDF अपलोड करें, टेक्स्ट देखें/संपादित करें और CSV डाउनलोड करें। (स्कैन किए हुए इमेज-PDF के लिए OCR पहले चाहिए)</p>
 
-    <div class="row">
-      <div class="col">
-        <label>1) PDF चुनें</label>
-        <input id="pdfFile" type="file" accept="application/pdf" />
-        <div class="note">छोटा PDF अच्छे से काम करेगा; बड़ा PDF भी चलेगा पर प्रोसेसिंग ब्राउज़र में होती है।</div>
+<h2>PDF → TEXT → CSV Converter</h2>
 
-        <div style="margin-top:12px;">
-          <label>2) पेज रेंज (optional)</label>
-          <input id="pageRange" placeholder="उदा. 1-3,5  (खाली छोड़ें = सभी पेज)" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;" />
-        </div>
+<input type="file" id="pdfFile" accept="application/pdf">
+<button onclick="convertPDF()">Convert to CSV</button>
 
-        <div style="margin-top:12px;">
-          <label>3) Extracted Text (आप यहाँ edit कर सकते हैं)</label>
-          <textarea id="extractedText" placeholder="PDF से निकला टेक्स्ट यहाँ दिखेगा..."></textarea>
-        </div>
-
-        <div class="controls">
-          <button id="extractBtn" class="small">PDF से टेक्स्ट निकाले</button>
-          <button id="clearBtn" class="small secondary">Clear</button>
-        </div>
-
-      </div>
-
-      <div class="col">
-        <label>CSV Conversion Rules</label>
-
-        <div style="margin-bottom:8px;">
-          <label>Delimiter (CSV कॉलम अलग करने के लिए)</label>
-          <input id="delimiter" value="," style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;" />
-        </div>
-
-        <div style="margin-bottom:8px;">
-          <label>Split method</label>
-          <div class="options">
-            <label class="inline"><input type="radio" name="split" value="line" checked /> हर लाइन → एक row</label>
-            <label class="inline"><input type="radio" name="split" value="space" /> स्पेस/मल्टीस्पेस से columns बनाएं</label>
-            <label class="inline"><input type="radio" name="split" value="regex" /> कस्टम regex (capture groups)</label>
-          </div>
-        </div>
-
-        <div id="regexRow" style="display:none; margin-bottom:8px;">
-          <label>Regex (JS syntax) — पूरा लाइन match करें और capture groups का उपयोग करें</label>
-          <input id="regexInput" placeholder="उदा. ^(\d+)\s+(\w+)\s+(.*)$" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;" />
-          <div class="note">Regex में global (/g) नहीं लगाएँ; बस pattern लिखें। यदि groups नहीं मिलते तो उस लाइन को skip करेगा।</div>
-        </div>
-
-        <div style="margin-bottom:8px;">
-          <label>Header Row (optional)</label>
-          <input id="headerRow" placeholder="उदा. SerialNo,EPIC_NO,PartNo,VoterName" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;" />
-        </div>
-
-        <div class="controls">
-          <button id="convertBtn" class="small">Convert → CSV</button>
-          <button id="downloadBtn" class="small secondary" disabled>CSV Download</button>
-        </div>
-
-        <div style="margin-top:12px;">
-          <label>Preview / Output</label>
-          <div id="csvPreview" class="out" aria-live="polite">CSV preview यहाँ दिखेगा...</div>
-        </div>
-
-      </div>
-    </div>
-
-    <footer>Simple client-side PDF→CSV tool • अगर OCR चाहिए तो बताइए</footer>
-  </div>
+<h3>Extracted Text:</h3>
+<div id="result"></div>
 
 <script>
-  // PDF.js worker setup (using CDN)
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+function convertPDF() {
+    let file = document.getElementById("pdfFile").files[0];
+    if (!file) { alert("Please select a PDF file"); return; }
 
-  const pdfFile = document.getElementById('pdfFile');
-  const extractBtn = document.getElementById('extractBtn');
-  const extractedText = document.getElementById('extractedText');
-  const clearBtn = document.getElementById('clearBtn');
-  const pageRangeInput = document.getElementById('pageRange');
+    let reader = new FileReader();
+    reader.onload = function () {
+        let typedarray = new Uint8Array(this.result);
 
-  const delimiterInput = document.getElementById('delimiter');
-  const convertBtn = document.getElementById('convertBtn');
-  const downloadBtn = document.getElementById('downloadBtn');
-  const csvPreview = document.getElementById('csvPreview');
-  const headerRowInput = document.getElementById('headerRow');
+        pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
+            let textContent = "";
 
-  const regexRadio = document.querySelector('input[name="split"][value="regex"]');
-  const regexRow = document.getElementById('regexRow');
-  const regexInput = document.getElementById('regexInput');
+            for (let i = 1; i <= pdf.numPages; i++) {
+                let page = await pdf.getPage(i);
+                let txt = await page.getTextContent();
+                txt.items.forEach(t => textContent += t.str + " ");
+                textContent += "\n";
+            }
 
-  // Show/hide regex input
-  document.querySelectorAll('input[name="split"]').forEach(r => {
-    r.addEventListener('change', () => {
-      regexRow.style.display = (regexRadio.checked ? 'block' : 'none');
-    });
-  });
+            document.getElementById("result").textContent = textContent;
 
-  clearBtn.onclick = () => {
-    extractedText.value = '';
-    csvPreview.textContent = 'CSV preview यहाँ दिखेगा...';
-    downloadBtn.disabled = true;
-  };
+            // CLEAN → CSV
+            let lines = textContent
+                .replace(/\s+/g, " ") 
+                .trim()
+                .split("\n")
+                .map(l => `"${l.trim().replace(/"/g, "")}"`);
 
-  extractBtn.onclick = async () => {
-    const file = pdfFile.files[0];
-    if (!file) { alert('कृपया PDF चुनें।'); return; }
+            let csvData = "Line\n" + lines.join("\n");
 
-    const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({data: arrayBuffer});
-    csvPreview.textContent = 'PDF parse किया जा रहा है — कृपया प्रतीक्षा करें...';
-    try {
-      const pdf = await loadingTask.promise;
-      const total = pdf.numPages;
-      const pagesToProcess = parsePageRange(pageRangeInput.value, total);
-      let fullText = '';
-      for (let i of pagesToProcess) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        const strings = content.items.map(item => item.str);
-        // Join small items with space — preserves words
-        const pageText = strings.join(' ');
-        fullText += pageText + '\\n';
-      }
-      extractedText.value = fullText.trim();
-      csvPreview.textContent = 'टेक्स्ट निकाल लिया गया — अब "Convert → CSV" दबाएँ।';
-    } catch (err) {
-      console.error(err);
-      alert('PDF पढ़ने में त्रुटि: ' + err.message);
-      csvPreview.textContent = 'त्रुटि: ' + err.message;
-    }
-  };
-
-  function parsePageRange(input, totalPages) {
-    // returns array of page numbers (1-based)
-    if (!input || !input.trim()) {
-      return Array.from({length: totalPages}, (_,i)=>i+1);
-    }
-    input = input.replace(/\s+/g,'');
-    const parts = input.split(',');
-    const pages = new Set();
-    for (const p of parts) {
-      if (p.includes('-')) {
-        const [a,b] = p.split('-').map(x=>parseInt(x,10)).filter(x=>!isNaN(x));
-        if (!isNaN(a) && !isNaN(b)) {
-          for (let k=Math.max(1,a); k<=Math.min(b,totalPages); k++) pages.add(k);
-        }
-      } else {
-        const n = parseInt(p,10);
-        if (!isNaN(n) && n>=1 && n<=totalPages) pages.add(n);
-      }
-    }
-    const arr = Array.from(pages).sort((x,y)=>x-y);
-    return arr.length? arr : Array.from({length:totalPages}, (_,i)=>i+1);
-  }
-
-  // CSV generation
-  convertBtn.onclick = () => {
-    const text = extractedText.value.trim();
-    if (!text) { alert('पहले टेक्स्ट निकालें या टेक्स्ट पेस्ट करें।'); return; }
-
-    const delim = delimiterInput.value || ',';
-    const splitMethod = document.querySelector('input[name="split"]:checked').value;
-    const header = headerRowInput.value.trim();
-    const lines = text.split(/\\r?\\n/).map(l => l.trim()).filter(l => l.length>0);
-
-    let rows = [];
-    if (splitMethod === 'line') {
-      // Each line becomes one column (or split by delim if present)
-      rows = lines.map(l => [l]);
-    } else if (splitMethod === 'space') {
-      // split by 2+ spaces OR tab OR single pipe, try to detect columns
-      rows = lines.map(line => {
-        // Prefer split on two or more spaces (typical from PDF columns)
-        let parts = line.split(/\\s{2,}|\\t|\\|/).map(s=>s.trim()).filter(s=>s!=='');
-        // If that yields 1 part, fallback to single-space split
-        if (parts.length === 1) parts = line.split(/\\s+/).map(s=>s.trim()).filter(s=>s!=='');
-        return parts;
-      });
-    } else if (splitMethod === 'regex') {
-      const pattern = regexInput.value;
-      if (!pattern) { alert('कृपया Regex दर्ज करें।'); return; }
-      let re;
-      try {
-        re = new RegExp(pattern);
-      } catch(e) {
-        alert('Regex invalid: ' + e.message);
-        return;
-      }
-      rows = [];
-      for (const line of lines) {
-        const m = line.match(re);
-        if (m && m.length>1) {
-          // m[1..] are capture groups
-          rows.push(m.slice(1).map(s => (s===undefined? '': String(s).trim())));
-        } else {
-          // skip lines that do not match
-        }
-      }
-      if (rows.length === 0) {
-        if (!confirm('कोई भी लाइन regex से match नहीं हुई — क्या आप सभी lines को single-column CSV में डालना चाहते हैं?')) {
-          return;
-        } else {
-          rows = lines.map(l => [l]);
-        }
-      }
-    }
-
-    // Normalize column counts (pad with empty)
-    const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
-    const normalized = rows.map(r => {
-      const copy = r.slice();
-      while (copy.length < maxCols) copy.push('');
-      return copy;
-    });
-
-    // Prepare CSV string with proper escaping & UTF-8 BOM for Excel
-    const escapeCell = (cell) => {
-      if (cell === null || cell === undefined) return '';
-      const s = String(cell);
-      // If contains double quote, comma, newline, wrap in quotes and escape quotes
-      if (s.includes('"') || s.includes('\\n') || s.includes('\\r') || s.includes(delim) || s.includes(',')) {
-        return '"' + s.replace(/"/g, '""') + '"';
-      }
-      return s;
+            // DOWNLOAD CSV
+            let blob = new Blob([csvData], { type: "text/csv" });
+            let link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "output.csv";
+            link.click();
+        });
     };
 
-    let csvLines = [];
-    if (header) {
-      csvLines.push(header.split(',').map(h => escapeCell(h.trim())).join(delim));
-    }
-    for (const row of normalized) {
-      csvLines.push(row.map(c => escapeCell(c)).join(delim));
-    }
-    const csvContent = csvLines.join('\\r\\n');
-
-    // Preview (first 2000 chars)
-    csvPreview.textContent = csvContent.slice(0, 20000) || '(empty)';
-    // Enable download
-    downloadBtn.disabled = false;
-    downloadBtn.dataset.csv = csvContent;
-    downloadBtn.dataset.filename = (document.getElementById('pdfFile').files[0]?.name || 'output') .replace(/\\.pdf$/i,'') + '.csv';
-  };
-
-  downloadBtn.onclick = () => {
-    const csv = downloadBtn.dataset.csv || '';
-    if (!csv) { alert('कोई CSV नहीं है — पहले Convert करें।'); return; }
-    // Add UTF-8 BOM so Excel detects UTF-8 correctly
-    const bom = '\\uFEFF';
-    const blob = new Blob([bom + csv], {type: 'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = downloadBtn.dataset.filename || 'output.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  // Helper: If user pastes text, enable convert
-  extractedText.addEventListener('input', () => {
-    csvPreview.textContent = 'Ready to convert — "Convert → CSV" दबाएँ।';
-  });
-
-  // Allow drag-drop of PDF
-  document.addEventListener('dragover', e => e.preventDefault());
-  document.addEventListener('drop', e => {
-    e.preventDefault();
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f && f.type === 'application/pdf') {
-      pdfFile.files = e.dataTransfer.files;
-      csvPreview.textContent = 'PDF file detected — अब "PDF से टेक्स्ट निकाले" दबाएँ।';
-    }
-  });
-
+    reader.readAsArrayBuffer(file);
+}
 </script>
+
 </body>
 </html>
