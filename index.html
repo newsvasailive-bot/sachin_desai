@@ -3,96 +3,90 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Text to CSV Converter</title>
+<title>Text to CSV</title>
 <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f4f4f4; }
-    h2 { text-align: center; }
-    textarea { width: 100%; height: 200px; padding: 10px; margin-top: 10px; font-size: 14px; }
-    button { padding: 10px 20px; margin: 10px 0; font-size: 16px; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    table, th, td { border: 1px solid #ccc; }
-    th, td { padding: 8px; text-align: left; }
-    th { background: #eee; }
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f9f9f9; }
+  h2 { text-align: center; }
+  textarea { width: 100%; height: 200px; margin-bottom: 10px; font-family: monospace; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { border: 1px solid #888; padding: 5px; text-align: left; }
+  th { background: #eee; }
+  button { margin-top: 10px; padding: 5px 10px; }
 </style>
 </head>
 <body>
 
 <h2>Text to CSV Converter</h2>
 
-<!-- Fixed header -->
-<p><strong>SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender</strong></p>
-
-<!-- Input box -->
-<textarea id="inputText" placeholder="Paste messy text here..."></textarea>
+<label>Paste your text here:</label>
+<textarea id="inputText" placeholder="Paste your text here..."></textarea>
 
 <br>
-<button onclick="convertText()">Convert to CSV</button>
-<button onclick="downloadCSV()">Download CSV</button>
+<button onclick="processText()">Generate Table</button>
+<button onclick="copyCSV()">Copy CSV</button>
 
-<!-- Output table -->
 <table id="outputTable">
-    <thead>
-        <tr>
-            <th>SerialNo</th>
-            <th>EPIC_NO</th>
-            <th>PartNo</th>
-            <th>VoterName</th>
-            <th>RelationName</th>
-            <th>RelationType</th>
-            <th>HouseNo</th>
-            <th>Age</th>
-            <th>Gender</th>
-        </tr>
-    </thead>
-    <tbody>
-    </tbody>
+  <thead>
+    <tr>
+      <th>SerialNo</th>
+      <th>EPIC_NO</th>
+      <th>PartNo</th>
+      <th>VoterName</th>
+      <th>RelationName</th>
+      <th>RelationType</th>
+      <th>HouseNo</th>
+      <th>Age</th>
+      <th>Gender</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Output rows appear here -->
+  </tbody>
 </table>
 
 <script>
-function convertText() {
-    const input = document.getElementById("inputText").value;
-    const lines = input.split(/\r?\n/);
-    const tableBody = document.querySelector("#outputTable tbody");
-    tableBody.innerHTML = "";
+function processText() {
+    const input = document.getElementById("inputText").value.trim();
+    const lines = input.split("\n");
+    const tbody = document.querySelector("#outputTable tbody");
+    tbody.innerHTML = "";
 
-    lines.forEach(line => {
-        // Skip empty lines
-        if (!line.trim()) return;
+    for(let line of lines) {
+        line = line.trim();
+        if(!line) continue;
 
-        // Split line by commas (CSV-like)
-        let parts = line.split(',');
+        // Split CSV, handling quoted values
+        let cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
 
-        // Ensure exactly 9 columns
-        while (parts.length < 9) parts.push('');
-        if (parts.length > 9) parts = parts.slice(0,9);
-
-        const row = document.createElement("tr");
-        parts.forEach(cell => {
-            const td = document.createElement("td");
-            td.textContent = cell.replace(/^"|"$/g,''); // Remove quotes
-            row.appendChild(td);
-        });
-        tableBody.appendChild(row);
-    });
+        if(cols.length >= 9) {
+            const tr = document.createElement("tr");
+            for(let i=0;i<9;i++) {
+                const td = document.createElement("td");
+                td.textContent = cols[i] || "";
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+    }
 }
 
-function downloadCSV() {
+function copyCSV() {
     const table = document.getElementById("outputTable");
     let csv = [];
-    for (let i = 0; i < table.rows.length; i++) {
+    table.querySelectorAll("tr").forEach(tr => {
         let row = [];
-        for (let j = 0; j < table.rows[i].cells.length; j++) {
-            row.push('"' + table.rows[i].cells[j].textContent + '"');
-        }
+        tr.querySelectorAll("th, td").forEach(td => {
+            row.push('"' + td.textContent.replace(/"/g,'""') + '"');
+        });
         csv.push(row.join(","));
-    }
-    const csvFile = new Blob([csv.join("\n")], {type: "text/csv"});
-    const downloadLink = document.createElement("a");
-    downloadLink.download = "output.csv";
-    downloadLink.href = window.URL.createObjectURL(csvFile);
-    downloadLink.style.display = "none";
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
+    });
+    const temp = document.createElement("textarea");
+    temp.value = csv.join("\n");
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand("copy");
+    document.body.removeChild(temp);
+    alert("CSV copied to clipboard!");
 }
 </script>
 
