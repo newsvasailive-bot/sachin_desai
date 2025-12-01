@@ -1,3 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voter CSV Exact Format Extractor</title>
+<style>
+body { font-family: Arial; background:#f9f9f9; padding:20px; }
+textarea { width:100%; height:250px; padding:10px; font-size:14px; }
+button { padding:10px 20px; margin-top:10px; cursor:pointer; }
+table { width:100%; border-collapse:collapse; margin-top:20px; background:#fff; }
+th, td { border:1px solid #ccc; padding:8px; font-size:14px; text-align:left; }
+th { background:#333; color:#fff; }
+</style>
+</head>
+<body>
+
+<h2>Voter List Auto Extractor (Exact CSV Format)</h2>
+
+<textarea id="input" placeholder="Yahan voter list paste karein..."></textarea><br>
+<button onclick="extract()">Extract & Show</button>
+<button onclick="downloadCSV()">Download CSV</button>
+
+<table id="output">
+    <thead>
+        <tr>
+            <th>SerialNo</th>
+            <th>EPIC_NO</th>
+            <th>PartNo</th>
+            <th>VoterName</th>
+            <th>RelationName</th>
+            <th>RelationType</th>
+            <th>HouseNo</th>
+            <th>Age</th>
+            <th>Gender</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
 <script>
 function extract() {
     let text = document.getElementById("input").value;
@@ -23,58 +62,69 @@ function extract() {
     }
 
     lines.forEach(line => {
+
+        // SERIAL NUMBER
         if (/^\d{1,4}$/.test(line)) {
             pushVoter();
             voter.SerialNo = line;
             return;
         }
 
+        // EPIC + PARTNO (JOINED ALSO)
         if (/^[A-Z]{3}\d{7,}/.test(line)) {
-            let match = line.match(/^([A-Z]{3}\d{7,})(.*)?/);
-            voter.EPIC_NO = match[1];
+            let epicMatch = line.match(/^[A-Z]{3}\d{7,}/);
+            if (epicMatch) voter.EPIC_NO = epicMatch[0];
 
-            let part = line.match(/\d+\/\d+\/\d+/);
-            if (part) voter.PartNo = part[0];
+            let partMatch = line.match(/\d+\/\d+\/\d+/);
+            if (partMatch) voter.PartNo = partMatch[0];
 
             return;
         }
 
+        // NAME
         if (line.includes("मतदाराचे पूर्ण") || line.includes("नांव")) {
-            let n = line.split(":").pop().trim();
-            voter.VoterName = n || "NA";
+            voter.VoterName = line.split(":").pop().trim() || "NA";
             return;
         }
 
+        // RELATION - HUSBAND
         if (line.includes("पतीचे नाव")) {
             voter.RelationType = "Husband";
             voter.RelationName = line.split(":").pop().trim();
             return;
         }
 
+        // RELATION - FATHER
         if (line.includes("वडिलांचे नाव")) {
             voter.RelationType = "Father";
             voter.RelationName = line.split(":").pop().trim();
             return;
         }
 
+        // HOUSE NO
         if (line.includes("घर क्रमांक")) {
             voter.HouseNo = line.split(":").pop().trim() || "NA";
             return;
         }
 
+        // AGE
         if (line.includes("वय")) {
             voter.Age = line.split(":").pop().trim();
             return;
         }
 
+        // GENDER
         if (line.includes("लिंग")) {
-            if (line.includes("स्त्री") || line.includes("Female")) voter.Gender = "Female";
-            else voter.Gender = "Male";
+            if (line.includes("स्त्री") || line.includes("Female"))
+                voter.Gender = "Female";
+            else
+                voter.Gender = "Male";
 
             pushVoter();
         }
     });
 
+    // SHOW RESULT IN TABLE
     results.forEach(r => {
         tbody.innerHTML += `
         <tr>
@@ -110,3 +160,6 @@ function downloadCSV() {
     a.click();
 }
 </script>
+
+</body>
+</html>
