@@ -2,12 +2,13 @@
 <html lang="hi">
 <head>
 <meta charset="UTF-8">
-<title>Powerful CSV Viewer</title>
+<title>CSV Paste Viewer</title>
 <style>
-    body { font-family: Arial,sans-serif; padding: 20px; background:#f7f7f7; }
+    body { font-family: Arial,sans-serif; background:#f7f7f7; padding:20px; }
     h2 { text-align:center; }
-    #fileInput { display:block; margin:20px auto; padding:10px; }
-    .table-container { width:100%; overflow-x:auto; }
+    textarea { width:100%; height:200px; font-family: monospace; font-size:14px; padding:10px; }
+    button { padding:10px 15px; margin:10px 0; cursor:pointer; }
+    .table-container { width:100%; overflow-x:auto; margin-top:20px; }
     table { border-collapse: collapse; width:100%; background:white; }
     th, td { border:1px solid #333; padding:8px; text-align:left; font-size:14px; }
     th { background:#222; color:white; position:sticky; top:0; }
@@ -16,43 +17,36 @@
 </head>
 <body>
 
-<h2>Powerful CSV Viewer</h2>
-<input type="file" id="fileInput" accept=".csv">
+<h2>Paste Your CSV Here 🚀</h2>
+
+<textarea id="csvInput" placeholder="यहाँ अपनी CSV पेस्ट करें"></textarea>
+<button onclick="generateTable()">View CSV</button>
 
 <div class="table-container">
     <table id="csvTable"></table>
 </div>
 
 <script>
-document.getElementById("fileInput").addEventListener("change", function(e){
-    let file = e.target.files[0];
-    if(!file) { alert("कृपया CSV फ़ाइल चुनें"); return; }
+function generateTable(){
+    let csvText = document.getElementById("csvInput").value;
+    if(!csvText.trim()){
+        alert("कृपया CSV text पेस्ट करें");
+        return;
+    }
 
-    let reader = new FileReader();
-    reader.onload = function(event){
-        let text = event.target.result;
-        displayCSV(text);
-    };
-    reader.readAsText(file,"UTF-8");
-});
-
-function displayCSV(csvText){
-    csvText = csvText.replace(/\r/g,"");
-    let rows = csvText.split("\n").filter(r=>r.trim()!=="");
-
+    csvText = csvText.replace(/\r/g,""); // Windows line endings remove
+    let rows = csvText.split("\n").filter(r => r.trim() !== "");
     let table = document.getElementById("csvTable");
     table.innerHTML = "";
 
     rows.forEach((row,index)=>{
         let tr = document.createElement("tr");
         let cols = parseCSVRow(row);
-
         cols.forEach(col=>{
             let cell = document.createElement(index===0?"th":"td");
             cell.textContent = col.trim();
             tr.appendChild(cell);
         });
-
         table.appendChild(tr);
     });
 }
@@ -66,7 +60,12 @@ function parseCSVRow(row){
         let char = row[i];
 
         if(char=='"'){
-            inQuotes = !inQuotes;
+            if(row[i+1]=='"'){ // double quote inside quotes
+                col+='"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
         }
         else if(char==',' && !inQuotes){
             result.push(col);
