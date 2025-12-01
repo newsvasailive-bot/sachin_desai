@@ -2,88 +2,73 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Clean Voter CSV</title>
+<title>CSV Cleaner & Copy</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background:#f9f9f9; }
+  textarea { width: 100%; height: 200px; margin-bottom:10px; font-size:14px; }
+  button { padding:10px 20px; font-size:16px; cursor:pointer; margin-right:10px; }
+  #output { white-space: pre; background:#fff; padding:10px; border:1px solid #ccc; height:300px; overflow:auto; }
+</style>
 </head>
 <body>
-<h2>Paste Voter Data</h2>
-<textarea id="rawData" rows="15" cols="100" placeholder="Paste messy voter data here..."></textarea>
-<br><br>
-<button onclick="generateCSV()">Generate CSV</button>
-<br><br>
-<textarea id="csvOutput" rows="15" cols="100" placeholder="Clean CSV will appear here"></textarea>
+
+<h2>Paste your raw data here:</h2>
+<textarea id="rawInput" placeholder="Paste messy data here..."></textarea>
 <br>
+<button onclick="generateCSV()">Generate CSV</button>
 <button onclick="copyCSV()">Copy CSV</button>
+
+<h2>Clean CSV Output:</h2>
+<div id="output"></div>
 
 <script>
 function generateCSV() {
-    const rawText = document.getElementById('rawData').value;
-    const lines = rawText.split(/\r?\n/);
-
-    const csvRows = [];
-    csvRows.push("SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender");
-
-    let serialNo = "", epicNo = "", partNo = "", voterName = "", relationName = "", relationType = "", houseNo = "", age = "", gender = "";
-
-    lines.forEach(line => {
+    let input = document.getElementById('rawInput').value.split('\n');
+    let csv = [];
+    
+    // Add header
+    csv.push("SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender");
+    
+    input.forEach(line => {
         line = line.trim();
-        if (!line) return; // skip empty
-        if (line.startsWith("<") || line.startsWith("} else") || line.startsWith("function") || line.startsWith("//")) return; // skip HTML/JS comments
+        if(!line) return;
 
-        // Detect serialNo: number or NA at start
-        const serialMatch = line.match(/^(\d+|NA)/);
-        if (serialMatch) {
-            if (voterName) { // push previous row
-                csvRows.push([
-                    serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType, `"${houseNo}"`, `"${age}"`, gender
-                ].join(","));
-            }
+        // Extract EPIC_NO and PartNo if present
+        let epicMatch = line.match(/RBG\d+/);
+        let partMatch = line.match(/\d+\/\d+\/\d+/);
+        let epic_no = epicMatch ? epicMatch[0] : "";
+        let part_no = partMatch ? partMatch[0] : "";
 
-            // Reset for new row
-            serialNo = serialMatch[1];
-            epicNo = "";
-            partNo = "";
-            voterName = "";
-            relationName = "";
-            relationType = "";
-            houseNo = "";
-            age = "";
-            gender = "";
+        // Remove prefixes like "| मतदाराचे पूर्ण:" etc
+        line = line.replace(/\|?\s*(मतदाराचे पूर्ण:|मतदाराचे पूर्ण|राचे पूर्ण:|नांव|Photo|पतीचे नाव|वडिलांचे नाव|Available|Photo Available):?/gi, '').trim();
 
-            // Extract EPIC_NO / PartNo if present
-            const parts = line.split(/[\s,]+/);
-            if (parts[1] && parts[1].startsWith("RBG")) epicNo = parts[1];
-            if (parts[2]) partNo = parts[2];
-            voterName = parts.slice(3).join(" ").trim();
-        } else {
-            // Detect relationType
-            if (line.match(/Husband|Father|Mother/i)) relationType = line;
-            // Detect gender
-            if (line.match(/Male|Female|स्त्री|पु/i)) gender = line;
-            // Detect houseNo
-            if (line.match(/घर क्रमांक/i)) houseNo = line;
-            // Detect age (numbers)
-            if (line.match(/^\d+$/)) age = line;
-            // If still voterName empty
-            if (!voterName) voterName = line;
-        }
+        // Gender extraction
+        let gender = "";
+        if(line.match(/Male|पुरुष|pu|पु/i)) gender="पु";
+        else if(line.match(/Female|स्त्री|str/i)) gender="स्त्री";
+
+        // Remove gender from line
+        line = line.replace(/Male|Female|पुरुष|स्त्री|pu|पु|str/gi, '').trim();
+
+        // SerialNo (if starts with number)
+        let serial = "";
+        let serialMatch = line.match(/^\d+/);
+        if(serialMatch) { serial = serialMatch[0]; line = line.replace(/^\d+\s*/, ''); }
+
+        // Push cleaned row
+        csv.push([serial || "NA", epic_no, part_no, `"${line}"`, "", "", "", "", gender].join(','));
     });
 
-    // Push last row
-    if (voterName) {
-        csvRows.push([
-            serialNo, epicNo, partNo, `"${voterName}"`, relationName, relationType, `"${houseNo}"`, `"${age}"`, gender
-        ].join(","));
-    }
-
-    document.getElementById('csvOutput').value = csvRows.join("\n");
+    document.getElementById('output').textContent = csv.join('\n');
 }
 
 function copyCSV() {
-    const csvText = document.getElementById('csvOutput');
-    csvText.select();
-    document.execCommand("copy");
-    alert("CSV copied!");
+    let output = document.getElementById('output').textContent;
+    navigator.clipboard.writeText(output).then(() => {
+        alert("CSV copied to clipboard!");
+    });
 }
 </script>
+
 </body>
 </html>
