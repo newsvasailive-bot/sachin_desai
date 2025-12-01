@@ -21,15 +21,7 @@ h2, h3 { color: #333; }
 <h2>🗳️ वोटर लिस्ट पार्सर और फायरबेस अपलोड</h2>
 
 <p>कच्चा (Raw) वोटर लिस्ट टेक्स्ट यहाँ पेस्ट करें:</p>
-<textarea id="voterText" placeholder="उदाहरण: 
-...
-RBG1234567 15/234
-मतदाराचे पूर्ण नांव : रमेश सुरेश पाटिल Available Photo
-वडिलांचे नाव : सुरेश बाबुराव पाटिल
-घर क्रमांक : 15
-वय : 45
-लिंग : पु
-..."></textarea>
+<textarea id="voterText" placeholder="कृपया अपने सभी वोटर रिकॉर्ड्स यहाँ पेस्ट करें..."></textarea>
 <br>
 
 <button onclick="parseVoters()">1. Parse to CSV & JSON</button>
@@ -64,7 +56,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ===== Parsing Logic =====
+// ===== Parsing Logic (FINAL ROBUST VERSION) =====
 let voters = [];
 
 /**
@@ -72,11 +64,12 @@ let voters = [];
  */
 function cleanText(str) {
     if(!str) return '';
-    // REGEX को और मजबूत किया गया
-    return str.replace(/(नांव|Available|Photo|मतदाराचे|उपलब्ध|पूर्ण|पतीचे|वडिलांचे|:\s*)$/gi,'')
+    // सभी अनावश्यक लेबल, पाइप्स, और अतिरिक्त टेक्स्ट को हटा दें
+    return str.replace(/(नांव|Available|Photo|मतदाराचे|उपलब्ध|पूर्ण|पतीचे|वडिलांचे|आईचे|नाव|:|\d+)/gi,'')
+              .replace(/\|\s*/g, '')
               .replace(/\r?\n/g,' ')
               .trim()
-              .replace(/^\s*:\s*/, ''); // यदि शुरू में ':' है तो हटा दें
+              .replace(/^\s*:\s*/, ''); 
 }
 
 /**
@@ -87,70 +80,91 @@ function parseVoters() {
     const lines = text.split(/\r?\n/);
     voters = [];
     let serial = 1;
-    let current = {};
+    let currentVoterData = {}; // Current voter data object
 
-    lines.forEach(line => {
-        line = line.trim();
-        if(!line) return;
+    // पूरे टेक्स्ट को एक स्ट्रिंग में जोड़ें ताकि मल्टी-लाइन फ़ील्ड्स को आसानी से संभाला जा सके
+    const fullText = lines.join(' ').replace(/\|\s*/g, ' ').replace(/\s+/g, ' ');
 
-        // EPIC_NO & PartNo: नए मतदाता रिकॉर्ड की शुरुआत।
-        // EPIC नंबर और Part Number (digits/digits) को मैच करता है।
-        // यह पैटर्न EPIC नंबर (जैसे RBG1234567) और Part Number (जैसे 15/234) को अलग-अलग पहचानता है।
-        const epicMatch = line.match(/([A-Z]{2,}\d{6,}[A-Z]{0,})\s+([\d\/]+)/); 
+    // EPIC (RBG...) को नए वोटर रिकॉर्ड की शुरुआत के रूप में पहचानें।
+    // यह EPIC और पार्ट नंबर को एक साथ कैप्चर करता है, भले ही पार्ट नंबर में तीन स्लैश हों।
+    const voterBlocks = fullText.split(/([A-Z]{2,}\d{6,}[A-Z]{0,}\s+[\d\/]+)/);
+
+    // पहले ब्लॉक (जो अक्सर खाली होता है) को हटा दें
+    if (voterBlocks[0].trim() === '') {
+        voterBlocks.shift();
+    }
+    
+    // हर दो आइटम EPIC/PartNo और उसके बाद के डेटा को प्रोसेस करें
+    for (let i = 0; i < voterBlocks.length; i += 2) {
+        const epicPartLine = voterBlocks[i] ? voterBlocks[i].trim() : '';
+        const dataBlock = voterBlocks[i+1] ? voterBlocks[i+1].trim() : '';
         
-        if(epicMatch) {
-            if(Object.keys(current).length) voters.push(current);
-            current = {
-                SerialNo: serial++,
-                EPIC_NO: epicMatch[1], 
-                PartNo: epicMatch[2] || '', 
-                VoterName: '',
-                RelationName: '',
-                RelationType: '',
-                HouseNo: '',
-                Age: '',
-                Gender: ''
-            };
-        }
+        if (!epicPartLine) continue;
 
-        // --- FIXED/ROBUST FIELD EXTRACTION USING REGEX ---
+        // EPIC और PartNo को एक्सट्रेक्ट करें
+        const epicMatch = epicPartLine.match(/([A-Z]{2,}\d{6,}[A-Z]{0,})\s+([\d\/]+)/);
+        if (!epicMatch) continue; 
+
+        currentVoterData = {
+            SerialNo: serial++,
+            EPIC_NO: epicMatch[1],
+            PartNo: epicMatch[2],
+            VoterName: '',
+            RelationName: '',
+            RelationType: '',
+            HouseNo: '',
+            Age: '',
+            Gender: ''
+        };
+
+        // --- डेटाब्लॉक से अन्य फ़ील्ड्स एक्सट्रेक्शन (MOST FLEXIBLE REGEX) ---
         
         // VoterName (मतदाराचे पूर्ण)
-        const nameMatch = line.match(/(?:\|?\s*(?:मतदाराचे पूर्ण|Voter's Full)\s*नांव?\s*:\s*)(.*)/i);
+        // यह 'मतदाराचे पूर्ण:' या 'मतदाराचे पूर्ण' के बाद, और 'नांव' या '|' से पहले आने वाले टेक्स्ट को नाम मानेगा।
+        const nameMatch = dataBlock.match(/(?:मतदाराचे पूर्ण|Voter's Full)\s*[:|]?\s*(.*?)(?:नाव|नांव|\||$)/i);
         if (nameMatch && nameMatch[1]) {
-            current.VoterName = cleanText(nameMatch[1]);
+            currentVoterData.VoterName = cleanText(nameMatch[1].trim());
         }
 
-        // Relation (पतीचे/वडिलांचे नाव)
-        const relationMatch = line.match(/(?:\|?\s*(पतीचे|वडिलांचे)\s*नाव\s*:\s*)(.*)/i);
+        // Relation (पतीचे/वडिलांचे/आईचे नाव)
+        const relationMatch = dataBlock.match(/(पतीचे|वडिलांचे|आईचे|इतर)\s*नाव\s*:\s*(.+?)(?:\|घर क्रमांक|\s*Photo|$)/i);
         if (relationMatch && relationMatch[2]) {
-            current.RelationName = cleanText(relationMatch[2]);
-            current.RelationType = (relationMatch[1] === 'पतीचे') ? 'Husband' : 'Father';
-        }
-
-        // HouseNo (घर क्रमांक)
-        const houseMatch = line.match(/(?:\|?\s*घर क्रमांक\s*:\s*)(.*)/i);
-        if (houseMatch && houseMatch[1]) {
-            current.HouseNo = cleanText(houseMatch[1]);
+            currentVoterData.RelationName = cleanText(relationMatch[2].trim());
+            if (relationMatch[1] === 'पतीचे') currentVoterData.RelationType = 'Husband';
+            else if (relationMatch[1] === 'वडिलांचे') currentVoterData.RelationType = 'Father';
+            else if (relationMatch[1] === 'आईचे') currentVoterData.RelationType = 'Mother';
+            else currentVoterData.RelationType = 'Other';
         }
         
         // Age (वय)
-        const ageMatch = line.match(/वय\s*:\s*(\d+)/);
+        const ageMatch = dataBlock.match(/वय\s*:\s*(\d+|[०-९]+)/);
         if(ageMatch) {
-            current.Age = ageMatch[1];
+            const ageString = ageMatch[1].replace(/[०-९]/g, d => '०१२३४५६७८९'.indexOf(d));
+            currentVoterData.Age = parseInt(ageString) || ageMatch[1];
         }
 
         // Gender (लिंग)
-        const genderMatch = line.match(/लिंग\s*:\s*(पु|स्त्री|Male|Female)/i);
+        const genderMatch = dataBlock.match(/लिंग\s*:\s*(पु|स्त्री|Male|Female)/i);
         if(genderMatch) {
             const g = genderMatch[1].trim();
-            if(g.startsWith('पु') || g.startsWith('Ma')) current.Gender = 'Male';
-            else if(g.startsWith('स्त्री') || g.startsWith('Fe')) current.Gender = 'Female';
+            if(g.startsWith('पु') || g.startsWith('Ma')) currentVoterData.Gender = 'Male';
+            else if(g.startsWith('स्त्री') || g.startsWith('Fe')) currentVoterData.Gender = 'Female';
         }
-    });
 
-    // अंतिम रिकॉर्ड को पुश करें
-    if(Object.keys(current).length) voters.push(current);
+        // HouseNo (घर क्रमांक)
+        // यह 'घर क्रमांक' के बाद शुरू होता है और 'वय', 'लिंग', या ब्लॉक के अंत तक चलता है
+        const houseMatch = dataBlock.match(/घर क्रमांक\s*:\s*(.+?)(?:वय|लिंग|$)/i);
+        if (houseMatch && houseMatch[1]) {
+            currentVoterData.HouseNo = cleanText(houseMatch[1].trim());
+        }
+
+        // Clean up VoterName again just in case
+        currentVoterData.VoterName = cleanText(currentVoterData.VoterName);
+        
+        voters.push(currentVoterData);
+    }
+    
+    // ===============================================
 
     // ===== CSV Output Generation =====
     const escapeCSV = str => `"${String(str || '').replace(/"/g,'""').replace(/\n/g,' ').replace(/\r/g,' ')}"`;
@@ -164,9 +178,15 @@ function parseVoters() {
 
     // ===== JSON Output Generation =====
     document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
+    
+    if (voters.length > 0) {
+        alert(`${voters.length} मतदाता रिकॉर्ड सफलतापूर्वक पार्स किए गए। अब आप डेटा डाउनलोड या Firebase पर भेज सकते हैं।`);
+    } else {
+        alert("कोई मतदाता रिकॉर्ड नहीं मिला। कृपया सुनिश्चित करें कि EPIC नंबर 'RBG...' और पार्ट नंबर का फॉर्मेट सही है।");
+    }
 }
 
-// ===== Download Functions =====
+// ===== Download Functions (No change needed) =====
 function downloadCSV() {
     const csvContent = document.getElementById('csvOutput').textContent;
     if (!csvContent || csvContent.includes('CSV डेटा यहाँ दिखाई देगा')) {
@@ -193,7 +213,7 @@ function downloadJSON() {
     link.click();
 }
 
-// ===== Firebase Push =====
+// ===== Firebase Push (No change needed) =====
 function pushFirebase() {
     if (voters.length === 0 || !document.getElementById('jsonOutput').textContent.includes('[')) {
         alert("पहले 'Parse to CSV & JSON' बटन दबाकर डेटा को Parse करें।");
@@ -211,7 +231,6 @@ function pushFirebase() {
         }
         
         try {
-            // Unique Key for Firebase (Forward slash / is replaced with - for path safety)
             const key = v.EPIC_NO + '_' + v.PartNo.replace(/\//g, '-'); 
             
             const promise = db.ref('voters/' + key).set(v)
@@ -228,7 +247,6 @@ function pushFirebase() {
         }
     });
 
-    // सभी अपलोड प्रॉमिसेस के खत्म होने का इंतजार करें
     Promise.allSettled(pushPromises).then(() => {
         alert(`वोटर अपलोड पूरा हुआ! Success attempts: ${success}, Failed records: ${fail}`);
     });
