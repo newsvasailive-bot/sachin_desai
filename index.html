@@ -33,18 +33,10 @@ textarea {
     transition: background-color 0.3s;
     width: 100%;
 }
-#generateButton {
-    background-color: #007bff; /* नीला */
-    color: white;
-}
+#generateButton { background-color: #007bff; color: white; }
 #generateButton:hover { background-color: #0056b3; }
-
-#copyButton {
-    background-color: #28a745; /* हरा */
-    color: white;
-}
+#copyButton { background-color: #28a745; color: white; }
 #copyButton:hover { background-color: #218838; }
-
 #outputCSV {
     width: 100%; 
     height: 300px; 
@@ -72,9 +64,6 @@ textarea {
 <textarea id="outputCSV" readonly placeholder="जनरेट किया गया CSV यहाँ दिखाई देगा।"></textarea>
 
 <script>
-// =======================================================================
-// CSV GENERATION LOGIC - CUSTOMIZED FOR YOUR DATA
-// =======================================================================
 const FIXED_HEADER = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
 
 function generateCSV() {
@@ -89,54 +78,42 @@ function generateCSV() {
         return;
     }
 
-    // 1. सभी पाइप, लाइन ब्रेक और अतिरिक्त स्पेस को हटाकर डेटा को समेटें
-    // 'मतदा...' पैटर्न को टूटने से बचाने के लिए पहले ही स्पेस हटा दें
     const cleanedRaw = raw
-        .replace(/\|\s*मतदा/g, ' मतदा') // पाइप + स्पेस + मतदा को स्पेस + मतदा से बदलें
-        .replace(/\|\s*/g, ' ') 
-        .replace(/\s+/g, ' ') // कई स्पेस को सिंगल स्पेस से बदलें
-        .replace(/\n/g, ' ') // लाइन ब्रेक को स्पेस से बदलें
+        .replace(/\|\s*मतदा/g, ' मतदा')
+        .replace(/\|\s*/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\n/g, ' ')
         .trim();
-    
-    // 2. सभी EPIC नंबरों को ढूंढें
-    // EPIC पैटर्न: अक्षर और संख्या (\w{7,}) उसके बाद वैकल्पिक PartNo
-    const epicRegex = /(\w{7,})\s*(\d{1,3}\/\d{1,3}\/\d+)/g; 
 
+    const epicRegex = /(\w{7,})\s*(\d{1,3}\/\d{1,3}\/\d+)/g; 
     let matches = [...cleanedRaw.matchAll(epicRegex)];
-    
+
     if (matches.length === 0) {
-        outputElement.value = FIXED_HEADER + '\n' + "❌ गंभीर त्रुटि: कोई EPIC पैटर्न ('RBG1234567 1/1/1') टेक्स्ट में नहीं मिला।";
+        outputElement.value = FIXED_HEADER + '\n' + "❌ गंभीर त्रुटि: कोई EPIC पैटर्न नहीं मिला।";
         return;
     }
-    
+
     let output = FIXED_HEADER + '\n';
     let serial = 1;
 
-    // 3. डेटा को प्रोसेस करें (प्रत्येक EPIC मैच पर लूप करें)
     for (let i = 0; i < matches.length; i++) {
         const start = matches[i].index;
         const end = (i + 1 < matches.length) ? matches[i+1].index : cleanedRaw.length;
-        
-        // यह 'fullRecord' एक EPIC से शुरू होकर अगले EPIC तक का सारा टेक्स्ट है
         const fullRecord = cleanedRaw.substring(start, end).trim();
         
         let voter = {};
-        
-        // 1. EPIC_NO and PartNo
+
         voter.EPIC_NO = matches[i][1];
         voter.PartNo = matches[i][2];
-        
-        // 2. Voter Name (टूटे हुए मतदा571... को संभालें)
+
         const nameMatch = fullRecord.match(/मतदा\s*\d*राचे पूर्ण\s*:\s*(.*?)\s*नांव/i);
         voter.VoterName = nameMatch ? nameMatch[1].trim() : 'NA';
-        // यदि नाम NA है, तो पूरे रिकॉर्ड से पहला शब्द निकालें (जैसे 'विश्वकर्मा')
+
         if (voter.VoterName === 'NA') {
-             const fallbackMatch = fullRecord.match(/RBG\w+\s*\d{1,3}\/\d{1,3}\/\d+\s*(\d{1,3})?\s*(.*?)\s*वडिलांचे|पतीचे|आईचे/i);
-             voter.VoterName = fallbackMatch && fallbackMatch[2] ? fallbackMatch[2].trim() : 'NA';
+            const fallbackMatch = fullRecord.match(/RBG\w+\s*\d{1,3}\/\d{1,3}\/\d+\s*(\d{1,3})?\s*(.*?)\s*वडिलांचे/i);
+            voter.VoterName = fallbackMatch && fallbackMatch[2] ? fallbackMatch[2].trim() : 'NA';
         }
 
-
-        // 3. Relation Name and Type
         const relationKeywords = {
             'पतीचे नाव': 'Husband',
             'वडिलांचे नाव': 'Father',
@@ -146,46 +123,40 @@ function generateCSV() {
         voter.RelationType = 'NA';
 
         for (const keyword in relationKeywords) {
-             // रिलेशन नेम को अगले कीवर्ड या डिटेल्स तक कैप्चर करें
-             const relationRegex = new RegExp(`${keyword}\\s*[:|]\\s*(.*?)(?:घर क्रमांक|वय|लिंग|मतदा|Photo|${voter.EPIC_NO}|$)`, 'i');
-             const relationMatch = fullRecord.match(relationRegex);
-             
-             if (relationMatch && relationMatch[1].trim()) {
-                 voter.RelationName = relationMatch[1].trim();
-                 voter.RelationType = relationKeywords[keyword];
-                 break;
-             }
+            const relationRegex = new RegExp(`${keyword}\\s*[:|]\\s*(.*?)(?:घर क्रमांक|वय|लिंग|मतदा|Photo|${voter.EPIC_NO}|$)`, 'i');
+            const relationMatch = fullRecord.match(relationRegex);
+
+            if (relationMatch && relationMatch[1].trim()) {
+                voter.RelationName = relationMatch[1].trim();
+                voter.RelationType = relationKeywords[keyword];
+                break;
+            }
         }
-        
-        // 4. Age and Gender
+
         const detailsMatch = fullRecord.match(/वय\s*:\s*(\d+).*लिंग\s*:\s*(पु|स्त्री|इतर)/);
         if (detailsMatch) {
             voter.Age = detailsMatch[1];
-            if (detailsMatch[2].includes('स्त्री')) voter.Gender = 'Female';
-            else if (detailsMatch[2].includes('पु')) voter.Gender = 'Male';
-            else voter.Gender = 'Other';
+            voter.Gender = detailsMatch[2].includes('स्त्री') ? 'Female' : 'Male';
         } else {
             voter.Age = 'NA';
             voter.Gender = 'NA';
         }
 
-        // 5. House Number
-        // घर क्रमांक को अगले प्रमुख कीवर्ड या Photo तक कैप्चर करें
         const houseMatch = fullRecord.match(/घर क्रमांक\s*[:|]\s*(.*?)(?:\s*वय\s*:|\s*लिंग\s*:| Photo|$)/i);
         voter.HouseNo = houseMatch ? houseMatch[1].trim() : 'NA';
-        
-        // 6. CSV Row Output
+
         const row = [
             serial++,
             voter.EPIC_NO || 'NA',
             voter.PartNo || 'NA',
-            `"${voter.VoterName ? voter.VoterName.replace(/"/g, '""') : 'NA'}"`,
-            `"${voter.RelationName || 'NA'}"`,
-            voter.RelationType || 'NA',
-            voter.HouseNo || 'NA',
-            voter.Age || 'NA',
-            voter.Gender || 'NA'
+            `"${voter.VoterName.replace(/"/g, '""')}"`,
+            `"${voter.RelationName.replace(/"/g, '""')}"`,
+            voter.RelationType,
+            voter.HouseNo,
+            voter.Age,
+            voter.Gender
         ].join(',');
+
         output += row + '\n';
     }
 
@@ -193,22 +164,15 @@ function generateCSV() {
     copyButton.disabled = false;
 }
 
-// =======================================================================
-// COPY FUNCTION
-// =======================================================================
 function copyCSV() {
     const outputElement = document.getElementById('outputCSV');
     outputElement.select();
-    outputElement.setSelectionRange(0, 99999);
-    
     navigator.clipboard.writeText(outputElement.value).then(() => {
         const copyButton = document.getElementById('copyButton');
         copyButton.textContent = '✅ कॉपी हो गया!';
         setTimeout(() => {
             copyButton.textContent = '📋 CSV कॉपी करें';
         }, 1500);
-    }).catch(err => {
-        alert('कॉपी करने में विफल: ' + err);
     });
 }
 </script>
