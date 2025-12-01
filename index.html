@@ -6,8 +6,9 @@
 <title>Voter List Parser & Downloader (Offline)</title>
 
 <style>
+/* Styling for better appearance */
 body { font-family: Arial, sans-serif; padding:20px; background:#f9f9f9; }
-textarea { width:100%; height:200px; margin-bottom:10px; border: 1px solid #ccc; padding: 10px; box-sizing: border-box; }
+textarea { width:100%; height:200px; margin-bottom:10px; border: 1px solid #ccc; padding: 10px; box-sizing: border-box; resize: vertical; }
 button { padding:10px 20px; margin:5px 5px 5px 0; cursor:pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; transition: background-color 0.3s; }
 button:hover { background-color: #0056b3; }
 pre { background:#eee; padding:10px; overflow-x:auto; white-space: pre-wrap; border: 1px solid #ddd; border-radius: 4px; }
@@ -19,7 +20,7 @@ h2, h3 { color: #333; }
 <h2>🗳️ वोटर लिस्ट पार्सर और डाउनलोडर (ऑफलाइन)</h2>
 
 <p>कच्चा (Raw) वोटर लिस्ट टेक्स्ट यहाँ पेस्ट करें:</p>
-<textarea id="voterText" placeholder="कृपया अपने सभी वोटर रिकॉर्ड्स यहाँ पेस्ट करें..."></textarea>
+<textarea id="voterText" placeholder="कृपया अपना अव्यवस्थित टेक्स्ट यहाँ पेस्ट करें..."></textarea>
 <br>
 
 <button onclick="parseVoters()">1. Parse to CSV & JSON</button>
@@ -33,7 +34,6 @@ h2, h3 { color: #333; }
 <pre id="jsonOutput">JSON डेटा यहाँ दिखाई देगा...</pre>
 
 <script>
-// FIX: 'voters' वेरिएबल को global scope में परिभाषित करना
 let voters = []; 
 
 /**
@@ -41,10 +41,10 @@ let voters = [];
  */
 function cleanText(str) {
     if(!str) return '';
-    // सभी अनावश्यक लेबल, पाइप्स, और अतिरिक्त टेक्स्ट को हटा दें
-    return str.replace(/(नांव|Available|Photo|मतदाराचे|उपलब्ध|पूर्ण|पतीचे|वडिलांचे|आईचे|नाव|:|\d+)/gi,'')
+    // सभी अनावश्यक लेबल (जैसे नांव, Photo, etc.) और अंक (नियमित और हिंदी दोनों) हटाएँ
+    return str.replace(/(नांव|Available|Photo|मतदाराचे|उपलब्ध|पूर्ण|पतीचे|वडिलांचे|आईचे|नाव|:|इतर)\s*|\d+|[०-९]+/gi, '')
               .replace(/\|\s*/g, '')
-              .replace(/\r?\n/g,' ')
+              .replace(/\r?\n/g, ' ')
               .trim()
               .replace(/^\s*:\s*/, ''); 
 }
@@ -59,30 +59,41 @@ function parseVoters() {
         return;
     }
     
-    const lines = text.split(/\r?\n/);
     voters = [];
     let serial = 1;
 
-    const fullText = lines.join(' ').replace(/\|\s*/g, ' ').replace(/\s+/g, ' ');
-    const voterBlocks = fullText.split(/([A-Z]{2,}\d{6,}[A-Z]{0,}\s+[\d\/]+)/);
+    // 1. टेक्स्ट को तैयार करें: सभी लाइन ब्रेक्स को स्पेस से बदलें, पाइप और अतिरिक्त स्पेस हटाएँ।
+    const fullText = text.replace(/\r?\n/g, ' ').replace(/\|\s*/g, ' ').replace(/\s+/g, ' ');
 
-    if (voterBlocks[0] && voterBlocks[0].trim() === '') {
-        voterBlocks.shift();
+    // 2. 🎯 EPIC के आधार पर पूरे डेटा को विभाजित करें। (RBG1234567 या MRL...)
+    // EPIC को कैप्चर करता है (यह सबसे मज़बूत विभाजन बिंदु है)
+    const epicBlocks = fullText.split(/([A-Z]{2,}\d{6,}[A-Z]{0,})/);
+
+    // 3. पहले खाली ब्लॉक को हटा दें (यदि मौजूद हो)
+    if (epicBlocks[0] && epicBlocks[0].trim() === '') {
+        epicBlocks.shift();
     }
     
-    for (let i = 0; i < voterBlocks.length; i += 2) {
-        const epicPartLine = voterBlocks[i] ? voterBlocks[i].trim() : '';
-        const dataBlock = voterBlocks[i+1] ? voterBlocks[i+1].trim() : '';
+    // 4. हर दो आइटम (EPIC और उसके बाद का डेटा ब्लॉक) को प्रोसेस करें
+    for (let i = 0; i < epicBlocks.length; i += 2) {
+        // EPIC और उसके बाद का डेटा एक साथ जोड़कर पूरा रिकॉर्ड ब्लॉक बनाया जाता है
+        const epicNo = epicBlocks[i].trim();
+        const dataAfterEpic = epicBlocks[i+1] ? epicBlocks[i+1].trim() : '';
+        const block = epicNo + " " + dataAfterEpic;
         
-        if (!epicPartLine) continue;
+        if (!block.trim()) continue; 
 
-        const epicMatch = epicPartLine.match(/([A-Z]{2,}\d{6,}[A-Z]{0,})\s+([\d\/]+)/);
-        if (!epicMatch) continue; 
+        // EPIC और PartNo को ब्लॉक की शुरुआत से एक्सट्रेक्ट करें
+        // PartNo (जैसे 131/272/587) EPIC के ठीक बाद, भले ही बीच में स्पेस हो।
+        const epicMatch = block.match(/([A-Z]{2,}\d{6,}[A-Z]{0,})\s*([\d\/]+)/);
+        
+        // यदि EPIC और PartNo दोनों नहीं मिले, तो रिकॉर्ड छोड़ दें
+        if (!epicMatch || !epicMatch[1]) continue; 
 
         let currentVoterData = {
             SerialNo: serial++,
             EPIC_NO: epicMatch[1],
-            PartNo: epicMatch[2],
+            PartNo: epicMatch[2] || 'N/A',
             VoterName: '',
             RelationName: '',
             RelationType: '',
@@ -90,40 +101,42 @@ function parseVoters() {
             Age: '',
             Gender: ''
         };
-
-        // VoterName
-        const nameMatch = dataBlock.match(/(?:मतदाराचे पूर्ण|Voter's Full)\s*[:|]?\s*(.+?)(?:नांव|\||$)/i);
+        
+        // --- डेटाब्लॉक से अन्य फ़ील्ड्स एक्सट्रेक्शन (BLOCK का उपयोग करके) ---
+        
+        // VoterName:
+        const nameMatch = block.match(/(?:मतदाराचे पूर्ण|Voter's Full)\s*[:|]?\s*(.+?)(?:नाव|नांव|\||$)/i);
         if (nameMatch && nameMatch[1]) {
             currentVoterData.VoterName = cleanText(nameMatch[1].trim());
         }
 
-        // Relation
-        const relationMatch = dataBlock.match(/(पतीचे|वडिलांचे|आईचे|इतर)\s*नाव\s*:\s*(.+?)(?:घर क्रमांक|\s*Photo|$)/i);
+        // Relation:
+        const relationMatch = block.match(/(पतीचे|वडिलांचे|आईचे|इतर)\s*नाव\s*:\s*(.+?)(?:घर क्रमांक|\s*Photo|$)/i);
         if (relationMatch && relationMatch[2]) {
             currentVoterData.RelationName = cleanText(relationMatch[2].trim());
-            if (relationMatch[1] === 'पतीचे') currentVoterData.RelationType = 'Husband';
-            else if (relationMatch[1] === 'वडिलांचे') currentVoterData.RelationType = 'Father';
-            else if (relationMatch[1] === 'आईचे') currentVoterData.RelationType = 'Mother';
+            if (relationMatch[1].includes('पती')) currentVoterData.RelationType = 'Husband';
+            else if (relationMatch[1].includes('वडि')) currentVoterData.RelationType = 'Father';
+            else if (relationMatch[1].includes('आई')) currentVoterData.RelationType = 'Mother';
             else currentVoterData.RelationType = 'Other';
         }
         
-        // Age
-        const ageMatch = dataBlock.match(/वय\s*:\s*(\d+|[०-९]+)/);
+        // Age:
+        const ageMatch = block.match(/वय\s*:\s*(\d+|[०-९]+)/);
         if(ageMatch) {
-            const ageString = ageMatch[1].replace(/[०-९]/g, d => '०१२३४५६७८९'.indexOf(d));
-            currentVoterData.Age = parseInt(ageString) || ageMatch[1];
+            // हिंदी अंकों को हटाने का काम cleanText में किया गया है, यहां सिर्फ़ पार्स करें
+            currentVoterData.Age = ageMatch[1]; 
         }
 
-        // Gender
-        const genderMatch = dataBlock.match(/लिंग\s*:\s*(पु|स्त्री|Male|Female)/i);
+        // Gender:
+        const genderMatch = block.match(/लिंग\s*:\s*(पु|स्त्री|Male|Female)/i);
         if(genderMatch) {
             const g = genderMatch[1].trim();
             if(g.startsWith('पु') || g.startsWith('Ma')) currentVoterData.Gender = 'Male';
             else if(g.startsWith('स्त्री') || g.startsWith('Fe')) currentVoterData.Gender = 'Female';
         }
 
-        // HouseNo
-        const houseMatch = dataBlock.match(/घर क्रमांक\s*:\s*(.+?)(?:वय|लिंग|$)/i);
+        // HouseNo: 
+        const houseMatch = block.match(/घर क्रमांक\s*:\s*(.+?)(?:वय|लिंग|$)/i);
         if (houseMatch && houseMatch[1]) {
             currentVoterData.HouseNo = cleanText(houseMatch[1].trim());
         }
@@ -133,7 +146,7 @@ function parseVoters() {
         voters.push(currentVoterData);
     }
     
-    // ===== CSV Output Generation =====
+    // ===== Output Generation (CSV & JSON) =====
     const escapeCSV = str => `"${String(str || '').replace(/"/g,'""').replace(/\n/g,' ').replace(/\r/g,' ')}"`;
     const csvHeader = 'SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender';
     const csvRows = voters.map(v => [
@@ -142,8 +155,6 @@ function parseVoters() {
         escapeCSV(v.HouseNo), v.Age, v.Gender
     ].join(','));
     document.getElementById('csvOutput').textContent = [csvHeader, ...csvRows].join('\n');
-
-    // ===== JSON Output Generation =====
     document.getElementById('jsonOutput').textContent = JSON.stringify(voters, null, 2);
     
     if (voters.length > 0) {
@@ -153,7 +164,7 @@ function parseVoters() {
     }
 }
 
-// ===== Download Functions =====
+// ===== Download Functions (Unchanged) =====
 function downloadCSV() {
     const csvContent = document.getElementById('csvOutput').textContent;
     if (!csvContent || csvContent.includes('CSV डेटा यहाँ दिखाई देगा')) {
