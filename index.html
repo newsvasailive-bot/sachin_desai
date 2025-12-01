@@ -2,11 +2,11 @@
 <html lang="hi">
 <head>
 <meta charset="UTF-8">
-<title>CSV Paste Viewer</title>
+<title>Voter List Parser</title>
 <style>
     body { font-family: Arial,sans-serif; background:#f7f7f7; padding:20px; }
     h2 { text-align:center; }
-    textarea { width:100%; height:200px; font-family: monospace; font-size:14px; padding:10px; }
+    textarea { width:100%; height:250px; font-family: monospace; font-size:14px; padding:10px; }
     button { padding:10px 15px; margin:10px 0; cursor:pointer; }
     .table-container { width:100%; overflow-x:auto; margin-top:20px; }
     table { border-collapse: collapse; width:100%; background:white; }
@@ -17,66 +17,86 @@
 </head>
 <body>
 
-<h2>Paste Your CSV Here 🚀</h2>
-
-<textarea id="csvInput" placeholder="यहाँ अपनी CSV पेस्ट करें"></textarea>
-<button onclick="generateTable()">View CSV</button>
+<h2>Voter List Parser (Messy Text → Table)</h2>
+<textarea id="rawInput" placeholder="यहाँ messy voter list paste करें"></textarea>
+<button onclick="generateVoterTable()">View Table</button>
 
 <div class="table-container">
-    <table id="csvTable"></table>
+    <table id="voterTable"></table>
 </div>
 
 <script>
-function generateTable(){
-    let csvText = document.getElementById("csvInput").value;
-    if(!csvText.trim()){
-        alert("कृपया CSV text पेस्ट करें");
-        return;
-    }
+function generateVoterTable(){
+    let text = document.getElementById("rawInput").value;
+    if(!text.trim()){ alert("कृपया data paste करें"); return; }
 
-    csvText = csvText.replace(/\r/g,""); // Windows line endings remove
-    let rows = csvText.split("\n").filter(r => r.trim() !== "");
-    let table = document.getElementById("csvTable");
+    let lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l!=="");
+    let table = document.getElementById("voterTable");
     table.innerHTML = "";
 
-    rows.forEach((row,index)=>{
-        let tr = document.createElement("tr");
-        let cols = parseCSVRow(row);
-        cols.forEach(col=>{
-            let cell = document.createElement(index===0?"th":"td");
-            cell.textContent = col.trim();
-            tr.appendChild(cell);
-        });
-        table.appendChild(tr);
+    // Table Header
+    let header = ["SerialNo","EPIC_NO","PartNo","VoterName","RelationName","RelationType","HouseNo","Age","Gender"];
+    let tr = document.createElement("tr");
+    header.forEach(h=>{
+        let th = document.createElement("th");
+        th.textContent = h;
+        tr.appendChild(th);
     });
-}
+    table.appendChild(tr);
 
-function parseCSVRow(row){
-    let result = [];
-    let col = "";
-    let inQuotes = false;
+    // Parse messy lines
+    let current = {}; 
+    let serial = 0;
 
-    for(let i=0;i<row.length;i++){
-        let char = row[i];
+    lines.forEach(line=>{
+        // Serial number detection
+        let serialMatch = line.match(/^(\d+)\s/);
+        let epicMatch = line.match(/RBG\d+|MRL\d+/);
+        let partMatch = line.match(/\d+\/\d+\/\d+/);
+        let ageMatch = line.match(/वय\s*:\s*(\d+)/);
+        let genderMatch = line.match(/लिंग\s*:\s*(.*)/);
 
-        if(char=='"'){
-            if(row[i+1]=='"'){ // double quote inside quotes
-                col+='"';
-                i++;
-            } else {
-                inQuotes = !inQuotes;
-            }
-        }
-        else if(char==',' && !inQuotes){
-            result.push(col);
-            col="";
+        // If a new record starts
+        if(serialMatch && epicMatch && partMatch){
+            if(Object.keys(current).length>0){ appendRow(current); current={}; }
+
+            serial++;
+            current.SerialNo = serial;
+            current.EPIC_NO = epicMatch[0];
+            current.PartNo = partMatch[0];
+
+            // Extract Voter Name from previous lines
+            let prevLine = lines[lines.indexOf(line)-1]||"";
+            current.VoterName = prevLine.replace(/^.*:|मतदाराचे पूर्ण|nांव/gi,'').trim() || "NA";
+            current.RelationName = "NA";
+            current.RelationType = "NA";
+            current.HouseNo = "NA";
+            current.Age = "NA";
+            current.Gender = "NA";
         }
         else{
-            col+=char;
+            if(/वडिलांचे नाव|पतीचे नाव|आईचे नाव/.test(line)){
+                current.RelationName = line.replace(/.*:|Available/gi,'').trim();
+                current.RelationType = /पती/.test(line) ? "Husband" : /आई/.test(line) ? "Mother" : "Father";
+            }
+            if(/घर क्रमांक/.test(line)){ current.HouseNo = line.replace(/.*:/,'').trim(); }
+            if(ageMatch){ current.Age = ageMatch[1]; }
+            if(genderMatch){ current.Gender = genderMatch[1]; }
         }
+    });
+
+    appendRow(current);
+
+    function appendRow(obj){
+        if(!obj || !obj.EPIC_NO) return;
+        let tr = document.createElement("tr");
+        header.forEach(h=>{
+            let td = document.createElement("td");
+            td.textContent = obj[h] || "NA";
+            tr.appendChild(td);
+        });
+        table.appendChild(tr);
     }
-    result.push(col);
-    return result;
 }
 </script>
 
