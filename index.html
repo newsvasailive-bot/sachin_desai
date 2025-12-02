@@ -2,73 +2,126 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>CSV Cleaner & Copy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voter List Text → CSV Converter</title>
+
 <style>
-  body { font-family: Arial, sans-serif; padding: 20px; background:#f9f9f9; }
-  textarea { width: 100%; height: 200px; margin-bottom:10px; font-size:14px; }
-  button { padding:10px 20px; font-size:16px; cursor:pointer; margin-right:10px; }
-  #output { white-space: pre; background:#fff; padding:10px; border:1px solid #ccc; height:300px; overflow:auto; }
+    body {
+        font-family: Arial;
+        padding: 20px;
+        background: #f5f5f5;
+    }
+    h2 {
+        text-align: center;
+        margin-bottom: 15px;
+    }
+    textarea {
+        width: 100%;
+        height: 200px;
+        padding: 10px;
+        border: 1px solid #999;
+        border-radius: 6px;
+        font-size: 16px;
+    }
+    .btn {
+        background: #007bff;
+        color: #fff;
+        padding: 12px 20px;
+        display: inline-block;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        margin-top: 10px;
+        font-size: 16px;
+    }
+    .btn:hover {
+        background: #0056b3;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        background: #fff;
+    }
+    table th, table td {
+        border: 1px solid #ccc;
+        padding: 8px;
+    }
+    table th {
+        background: #e9e9e9;
+    }
+    #copyBtn, #downloadBtn {
+        background: green;
+        margin-right: 10px;
+    }
 </style>
 </head>
+
 <body>
 
-<h2>Paste your raw data here:</h2>
-<textarea id="rawInput" placeholder="Paste messy data here..."></textarea>
-<br>
-<button onclick="generateCSV()">Generate CSV</button>
-<button onclick="copyCSV()">Copy CSV</button>
+<h2>Voter List Text → CSV Converter</h2>
 
-<h2>Clean CSV Output:</h2>
+<textarea id="inputText" placeholder="यहाँ Voter List से निकाला गया text paste करें..."></textarea>
+
+<br>
+<button class="btn" onclick="convert()">Convert to CSV</button>
+
+<h3>Output CSV Table:</h3>
+
 <div id="output"></div>
 
+<button class="btn" id="copyBtn" onclick="copyCSV()">Copy CSV</button>
+<button class="btn" id="downloadBtn" onclick="downloadCSV()">Download CSV</button>
+
 <script>
-function generateCSV() {
-    let input = document.getElementById('rawInput').value.split('\n');
-    let csv = [];
-    
-    // Add header
-    csv.push("SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender");
-    
-    input.forEach(line => {
-        line = line.trim();
-        if(!line) return;
+function convert() {
+    const raw = document.getElementById("inputText").value.trim();
+    if (!raw) return alert("कृपया पहले text paste करें!");
 
-        // Extract EPIC_NO and PartNo if present
-        let epicMatch = line.match(/RBG\d+/);
-        let partMatch = line.match(/\d+\/\d+\/\d+/);
-        let epic_no = epicMatch ? epicMatch[0] : "";
-        let part_no = partMatch ? partMatch[0] : "";
+    const lines = raw.split("\n").map(l => l.trim()).filter(l => l);
 
-        // Remove prefixes like "| मतदाराचे पूर्ण:" etc
-        line = line.replace(/\|?\s*(मतदाराचे पूर्ण:|मतदाराचे पूर्ण|राचे पूर्ण:|नांव|Photo|पतीचे नाव|वडिलांचे नाव|Available|Photo Available):?/gi, '').trim();
+    let csv = "SerialNo,EPIC_NO,PartNo,VoterName,RelationName,RelationType,HouseNo,Age,Gender\n";
 
-        // Gender extraction
-        let gender = "";
-        if(line.match(/Male|पुरुष|pu|पु/i)) gender="पु";
-        else if(line.match(/Female|स्त्री|str/i)) gender="स्त्री";
-
-        // Remove gender from line
-        line = line.replace(/Male|Female|पुरुष|स्त्री|pu|पु|str/gi, '').trim();
-
-        // SerialNo (if starts with number)
-        let serial = "";
-        let serialMatch = line.match(/^\d+/);
-        if(serialMatch) { serial = serialMatch[0]; line = line.replace(/^\d+\s*/, ''); }
-
-        // Push cleaned row
-        csv.push([serial || "NA", epic_no, part_no, `"${line}"`, "", "", "", "", gender].join(','));
+    let serial = 1;
+    lines.forEach(line => {
+        csv += `${serial},NA,NA,"${line.replace(/"/g, "'")}",NA,NA,NA,NA,NA\n`;
+        serial++;
     });
 
-    document.getElementById('output').textContent = csv.join('\n');
+    // Table बनाना
+    let html = "<table><tr>";
+    const headers = csv.split("\n")[0].split(",");
+    headers.forEach(h => html += `<th>${h}</th>`);
+    html += "</tr>";
+
+    const rows = csv.split("\n").slice(1);
+    rows.forEach(r => {
+        if (!r.trim()) return;
+        html += "<tr>";
+        r.split(",").forEach(col => html += `<td>${col}</td>`);
+        html += "</tr>";
+    });
+
+    html += "</table>";
+
+    document.getElementById("output").innerHTML = html;
+    window.finalCSV = csv;
 }
 
 function copyCSV() {
-    let output = document.getElementById('output').textContent;
-    navigator.clipboard.writeText(output).then(() => {
-        alert("CSV copied to clipboard!");
-    });
+    if (!window.finalCSV) return alert("पहले convert करें!");
+    navigator.clipboard.writeText(window.finalCSV);
+    alert("CSV Copy हो गया!");
+}
+
+function downloadCSV() {
+    if (!window.finalCSV) return alert("पहले convert करें!");
+    const blob = new Blob([window.finalCSV], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "voter_list.csv";
+    a.click();
 }
 </script>
-
 </body>
 </html>
